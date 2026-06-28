@@ -26,8 +26,35 @@
           <li><b>Mouse</b> — aim</li>
           <li><b>Left Click</b> / <b>Space</b> — slash</li>
           <li><b>Shift</b> / <b>Right Click</b> — dash</li>
+          <li><b>Esc</b> / <b>P</b> — pause</li>
+          <li>Pick an upgrade each wave</li>
         </ul>
+        <p class="field-label">DIFFICULTY</p>
+        <div id="difficulty" class="difficulty">
+          <button class="diff-btn" data-diff="easy">Cinder</button>
+          <button class="diff-btn selected" data-diff="normal">Ember</button>
+          <button class="diff-btn" data-diff="hard">Inferno</button>
+        </div>
         <button id="start-btn" class="btn">ENTER THE HELLSCAPE</button>
+      </div>
+    </div>
+
+    <!-- Pause screen -->
+    <div id="pause" class="screen hidden">
+      <div class="panel">
+        <h1>PAUSED</h1>
+        <p class="blurb">Catch your breath. The horde waits.</p>
+        <button id="resume-btn" class="btn">RESUME</button>
+        <button id="quit-btn" class="btn btn-ghost">ABANDON RUN</button>
+      </div>
+    </div>
+
+    <!-- Upgrade / level-up screen -->
+    <div id="upgrade" class="screen hidden">
+      <div class="panel panel-wide">
+        <h1 class="upgrade-title">CLAIM POWER</h1>
+        <p id="upgrade-sub" class="subtitle">Wave cleared — choose a boon</p>
+        <div id="upgrade-cards" class="cards"></div>
       </div>
     </div>
 

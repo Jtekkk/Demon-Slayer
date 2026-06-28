@@ -22,6 +22,7 @@ That's it — everything (art, sound, physics) is generated in code.
 | Aim | Mouse |
 | Slash | Left click or `Space` |
 | Dash (brief i-frames) | `Shift` or right click |
+| Pause / resume | `Esc` or `P` |
 
 **Touch / mobile** (controls appear automatically on first touch)
 
@@ -39,6 +40,31 @@ Chain kills for a combo, dash through danger, and grab the green health motes
 demons occasionally drop. Score is tallied per kill; the run ends when your
 health hits zero. Your best score is saved locally and shown on the title and
 HUD.
+
+### Difficulty
+
+Pick before you start — it scales enemy health, enemy damage, spawn rate, and
+your starting health:
+
+- **Cinder** — forgiving (130 HP, weaker demons).
+- **Ember** — the standard run (100 HP).
+- **Inferno** — brutal (80 HP, +35% enemy HP, +30% enemy damage).
+
+### Boons (roguelite upgrades)
+
+After every cleared wave the action pauses and you choose **one of three**
+random boons. They stack, so a run compounds into a build:
+
+| Boon | Effect |
+| --- | --- |
+| ⚔️ Sharpened Blade | +12 slash damage |
+| ⚡ Swift Strikes | Attack 15% faster |
+| 🥾 Fleet Footed | +move speed |
+| ❤️ Vital Surge | +25 max HP and heal |
+| 💨 Phantom Step | Dash recharges faster |
+| 🌙 Wide Arc | Longer reach, wider swing |
+| 🩸 Soul Siphon | Heal per kill (lifesteal) |
+| 🔥 Ember Slash | Every slash also fires a bolt (stacks into a fan) |
 
 ### Enemies
 

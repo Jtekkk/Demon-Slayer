@@ -303,27 +303,39 @@
       this.x = W / 2; this.y = H * 0.78; this.r = 14;
       this.speed = 3.0; this.maxHp = 100; this.hp = this.maxHp;
       this.facing = 0; this.invuln = 0;
-      this.atkCd = 0; this.atkTimer = 0; this.atkDur = 0.18;
+      this.atkCd = 0; this.atkCdTime = 0.28; this.atkTimer = 0; this.atkDur = 0.18;
       this.atkRange = 64; this.atkArc = Math.PI * 0.85; this.atkDmg = 34;
       this.swingFrom = 0; this.swingDir = 1; this.hitSet = null;
-      this.dashCd = 0; this.dashTimer = 0; this.dashVX = 0; this.dashVY = 0;
+      this.dashCd = 0; this.dashCdTime = 0.9; this.dashTimer = 0; this.dashVX = 0; this.dashVY = 0;
       this.combo = 0; this.comboTimer = 0;
+      // upgrade-driven extras
+      this.lifesteal = 0;   // hp healed per kill
+      this.emberLevel = 0;  // ranged slash projectiles per swing
     }
 
     tryAttack() {
       if (game.state !== "playing" || this.atkCd > 0) return;
-      this.atkCd = 0.28; this.atkTimer = this.atkDur; this.hitSet = new Set();
+      this.atkCd = this.atkCdTime; this.atkTimer = this.atkDur; this.hitSet = new Set();
       this.swingDir *= -1;
       this.swingFrom = this.facing - this.swingDir * this.atkArc / 2;
       Sound.slash();
       const tx = this.x + Math.cos(this.facing) * this.atkRange * 0.6;
       const ty = this.y + Math.sin(this.facing) * this.atkRange * 0.6;
       burst(tx, ty, 6, { color: "#bfe9ff", spdMin: 1, spdMax: 3, life: 0.3, glow: true, size: 2 });
+      // ranged "ember slash" projectiles, one fan per ember level
+      if (this.emberLevel > 0) {
+        const spread = 0.16;
+        for (let i = 0; i < this.emberLevel; i++) {
+          const off = (i - (this.emberLevel - 1) / 2) * spread;
+          game.spawnPlayerShot(this.facing + off, Math.round(this.atkDmg * 0.55));
+        }
+        Sound.cast();
+      }
     }
 
     tryDash() {
       if (game.state !== "playing" || this.dashCd > 0) return;
-      this.dashCd = 0.9; this.dashTimer = 0.16;
+      this.dashCd = this.dashCdTime; this.dashTimer = 0.16;
       const a = this.facing;
       this.dashVX = Math.cos(a) * 11; this.dashVY = Math.sin(a) * 11;
       this.invuln = Math.max(this.invuln, 0.22);
@@ -452,8 +464,9 @@
       const t = ENEMY_TYPES[type];
       this.type = type; this.def = t;
       this.x = x; this.y = y; this.r = t.r;
-      this.maxHp = t.hp; this.hp = t.hp;
-      this.speed = t.speed; this.dmg = t.dmg;
+      const D = game.diff;
+      this.maxHp = Math.round(t.hp * D.hpMul); this.hp = this.maxHp;
+      this.speed = t.speed; this.dmg = Math.round(t.dmg * D.dmgMul);
       this.dead = false; this.hitFlash = 0;
       this.kbx = 0; this.kby = 0; this.atkCd = 0; this.shootCd = rand(1, 2.5);
       this.phase = rand(0, TAU); this.bob = rand(0, TAU);
@@ -483,6 +496,12 @@
       const dropChance = this.isBoss ? 1 : 0.12;
       if (Math.random() < dropChance) game.spawnPickup(this.x, this.y);
       if (this.isBoss) { game.spawnPickup(this.x - 30, this.y); game.spawnPickup(this.x + 30, this.y); }
+      // lifesteal — enemies only ever die to the player here
+      const p = game.player;
+      if (p && p.lifesteal > 0 && p.hp > 0) {
+        p.hp = clamp(p.hp + p.lifesteal, 0, p.maxHp);
+        floatText(this.x, this.y - this.r - 6, "+" + p.lifesteal, "#6dff8a");
+      }
     }
 
     shootAt(px, py, speed, dmg, color) {
@@ -714,10 +733,10 @@
     const b = new Enemy("brute", W / 2, H * 0.34);
     b.isBoss = true;
     b.r = 40;
-    b.maxHp = 360 + wave * 70;
+    b.maxHp = Math.round((360 + wave * 70) * game.diff.hpMul);
     b.hp = b.maxHp;
     b.speed = 0.62;
-    b.dmg = 22;
+    b.dmg = Math.round(22 * game.diff.dmgMul);
     b.def = { ...ENEMY_TYPES.brute, score: 200, name: "archfiend" };
     b._volleyCd = 2.0; b._chargeCd = 4.0; b._charge = 0; b._chargeA = 0;
     return b;
@@ -749,15 +768,78 @@
     }
   }
 
-  // --- 8. Game loop & wave director ----------------------------------------
+  function updatePlayerShots(dt) {
+    for (let i = game.playerShots.length - 1; i >= 0; i--) {
+      const s = game.playerShots[i];
+      s.age += dt; s.x += s.vx; s.y += s.vy;
+      if (Math.random() < 0.6)
+        spawnParticle(s.x, s.y, { color: "#bfe9ff", life: 0.2, size: 2, glow: true, vx: 0, vy: 0, drag: 0.8 });
+      const off = s.x < -20 || s.x > W + 20 || s.y < -20 || s.y > H + 20;
+      if (s.age >= s.life || off || s.pierce < 0) { game.playerShots.splice(i, 1); continue; }
+      for (const e of game.enemies) {
+        if (e.dead || s.hit.has(e)) continue;
+        const rr = s.r + e.r;
+        if (dist2(s.x, s.y, e.x, e.y) < rr * rr) {
+          s.hit.add(e);
+          e.hurt(s.dmg, Math.atan2(s.vy, s.vx));
+          s.pierce--;
+          if (s.pierce < 0) break;
+        }
+      }
+    }
+  }
+  function drawPlayerShots() {
+    for (const s of game.playerShots) {
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(Math.atan2(s.vy, s.vx));
+      ctx.fillStyle = "#dff4ff"; ctx.shadowColor = "#9be7ff"; ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s.r * 1.8, s.r * 0.7, 0, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // --- 8. Difficulty, upgrades, game loop & wave director ------------------
+  const DIFFICULTIES = {
+    easy:   { name: "Cinder",  hpMul: 0.8, dmgMul: 0.7, spawnMul: 1.2, playerHp: 130 },
+    normal: { name: "Ember",   hpMul: 1.0, dmgMul: 1.0, spawnMul: 1.0, playerHp: 100 },
+    hard:   { name: "Inferno", hpMul: 1.35, dmgMul: 1.3, spawnMul: 0.8, playerHp: 80 },
+  };
+
+  // Roguelite boons offered between waves. `apply(p, g)` mutates the player/game.
+  // Stat boons stack; mechanic boons (lifesteal, ember) stack in strength too.
+  const UPGRADES = [
+    { id: "blade", icon: "⚔️", name: "Sharpened Blade", desc: "+12 slash damage",
+      apply: (p) => { p.atkDmg += 12; } },
+    { id: "swift", icon: "⚡", name: "Swift Strikes", desc: "Attack 15% faster",
+      apply: (p) => { p.atkCdTime = Math.max(0.12, p.atkCdTime * 0.85); } },
+    { id: "fleet", icon: "🥾", name: "Fleet Footed", desc: "+18% move speed",
+      apply: (p) => { p.speed += 0.55; } },
+    { id: "vital", icon: "❤️", name: "Vital Surge", desc: "+25 max HP & heal 25",
+      apply: (p) => { p.maxHp += 25; p.hp = clamp(p.hp + 25, 0, p.maxHp); } },
+    { id: "phantom", icon: "💨", name: "Phantom Step", desc: "Dash recharges faster",
+      apply: (p) => { p.dashCdTime = Math.max(0.4, p.dashCdTime - 0.18); } },
+    { id: "arc", icon: "🌙", name: "Wide Arc", desc: "+reach & wider swing",
+      apply: (p) => { p.atkRange += 12; p.atkArc = Math.min(Math.PI * 1.2, p.atkArc + 0.2); } },
+    { id: "siphon", icon: "🩸", name: "Soul Siphon", desc: "Heal +3 HP per kill",
+      apply: (p) => { p.lifesteal += 3; } },
+    { id: "ember", icon: "🔥", name: "Ember Slash", desc: "Each slash fires a bolt",
+      apply: (p) => { p.emberLevel += 1; } },
+  ];
+
   const BEST_KEY = "demonslayer.best";
   const game = {
     state: "menu", player: null,
-    enemies: [], pickups: [], enemyShots: [],
+    enemies: [], pickups: [], enemyShots: [], playerShots: [],
     score: 0, kills: 0, wave: 0,
     waveQueue: 0, spawnTimer: 0, betweenTimer: 0,
     shakeT: 0, shakeMag: 0, lastT: 0,
     best: 0, newBest: false,
+    diff: DIFFICULTIES.normal, diffKey: "normal",
+    upgrades: [], pendingOffer: null,
 
     loadBest() {
       try { this.best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; }
@@ -768,16 +850,27 @@
     },
 
     reset() {
+      this.diff = DIFFICULTIES[this.diffKey] || DIFFICULTIES.normal;
       this.player = new Player();
-      this.enemies = []; this.pickups = []; this.enemyShots = [];
+      this.player.maxHp = this.diff.playerHp;
+      this.player.hp = this.diff.playerHp;
+      this.enemies = []; this.pickups = []; this.enemyShots = []; this.playerShots = [];
       particles.length = 0; floaters.length = 0;
       this.score = 0; this.kills = 0; this.wave = 0;
       this.waveQueue = 0; this.spawnTimer = 0; this.betweenTimer = 1.2;
       this.shakeT = 0; this.newBest = false;
+      this.upgrades = []; this.pendingOffer = null;
       Background.init();
     },
 
     start() { Sound.init(); this.reset(); this.state = "playing"; hideScreens(); },
+
+    setDifficulty(key) { if (DIFFICULTIES[key]) { this.diffKey = key; this.diff = DIFFICULTIES[key]; } },
+
+    togglePause() {
+      if (this.state === "playing") { this.state = "paused"; pauseScreen.classList.remove("hidden"); }
+      else if (this.state === "paused") { this.state = "playing"; pauseScreen.classList.add("hidden"); }
+    },
 
     // tapping a screen on touch devices acts like the screen button
     touchTap() {
@@ -796,6 +889,38 @@
 
     shake(mag) { this.shakeMag = Math.max(this.shakeMag, mag); this.shakeT = 0.25; },
     spawnPickup(x, y) { this.pickups.push({ x: clamp(x, 10, W - 10), y: clamp(y, H * 0.36, H - 10), r: 7, bob: rand(0, TAU), age: 0, life: 8 }); },
+    spawnPlayerShot(angle, dmg) {
+      this.playerShots.push({
+        x: this.player.x + Math.cos(angle) * this.player.r,
+        y: this.player.y + Math.sin(angle) * this.player.r,
+        vx: Math.cos(angle) * 9, vy: Math.sin(angle) * 9,
+        r: 5, dmg, life: 1.1, age: 0, pierce: 1, hit: new Set(),
+      });
+    },
+
+    offerUpgrade() {
+      // pick three distinct boons at random
+      const pool = UPGRADES.slice();
+      const choices = [];
+      for (let i = 0; i < 3 && pool.length; i++) choices.splice(0, 0, pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+      this.pendingOffer = choices;
+      this.state = "upgrade";
+      upgradeSub.textContent = `Wave ${this.wave} cleared — choose a boon`;
+      buildUpgradeCards(choices);
+      upgradeScreen.classList.remove("hidden");
+    },
+
+    chooseUpgrade(up) {
+      if (this.state !== "upgrade") return;
+      up.apply(this.player, this);
+      this.upgrades.push(up.id);
+      floatText(this.player.x, this.player.y - 24, up.name, "#ffd36a");
+      burst(this.player.x, this.player.y, 16, { color: "#ffb347", spdMax: 4, life: 0.6, glow: true });
+      this.pendingOffer = null;
+      upgradeScreen.classList.add("hidden");
+      this.state = "playing";
+      this.startNextWave();
+    },
 
     bossAlive() { return this.enemies.find((e) => e.isBoss) || null; },
 
@@ -841,16 +966,22 @@
         this.spawnTimer -= dt;
         if (this.spawnTimer <= 0) {
           this.spawnEnemy(); this.waveQueue--;
-          this.spawnTimer = Math.max(0.35, 1.1 - this.wave * 0.05);
+          this.spawnTimer = Math.max(0.3, (1.1 - this.wave * 0.05) * this.diff.spawnMul);
         }
       } else if (this.enemies.length === 0) {
         this.betweenTimer -= dt;
-        if (this.betweenTimer <= 0) { this.betweenTimer = 2.2; this.startNextWave(); }
+        if (this.betweenTimer <= 0) {
+          this.betweenTimer = 1.0;
+          // wave 0 = first wave begins with no boon; after that, offer an upgrade
+          if (this.wave === 0) this.startNextWave();
+          else this.offerUpgrade();
+        }
       }
 
       for (const e of this.enemies) e.update(dt);
       this.enemies = this.enemies.filter((e) => !e.dead);
       updateEnemyShots(dt);
+      updatePlayerShots(dt);
 
       for (let i = this.pickups.length - 1; i >= 0; i--) {
         const pk = this.pickups[i];
@@ -888,6 +1019,7 @@
       ctx.shadowBlur = 0;
 
       drawEnemyShots();
+      drawPlayerShots();
 
       const drawables = [...this.enemies];
       if (this.player) drawables.push(this.player);
@@ -915,7 +1047,12 @@
 
       ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(bx, by + bh + 6, 80, 6);
       ctx.fillStyle = p.dashCd > 0 ? "#5a6a8a" : "#7fd8ff";
-      ctx.fillRect(bx, by + bh + 6, 80 * (1 - p.dashCd / 0.9), 6);
+      ctx.fillRect(bx, by + bh + 6, 80 * (1 - p.dashCd / p.dashCdTime), 6);
+      // boon count
+      if (this.upgrades.length) {
+        ctx.fillStyle = "#ffb347"; ctx.font = "11px 'Trebuchet MS', sans-serif"; ctx.textAlign = "left";
+        ctx.fillText(`✦ ${this.upgrades.length} boons`, bx + 90, by + bh + 12);
+      }
 
       ctx.textAlign = "right";
       ctx.fillStyle = "#ffd36a"; ctx.font = "bold 22px 'Trebuchet MS', sans-serif";
@@ -924,7 +1061,7 @@
       ctx.fillText(`WAVE ${this.wave || 1}`, W - 20, 54);
       ctx.fillText(`${this.enemies.length} demons`, W - 20, 72);
       ctx.fillStyle = "#8a7f72"; ctx.font = "11px 'Trebuchet MS', sans-serif";
-      ctx.fillText(`BEST ${this.best}`, W - 20, 90);
+      ctx.fillText(`BEST ${this.best} · ${this.diff.name}`, W - 20, 90);
 
       if (p.combo >= 2) {
         ctx.textAlign = "center"; ctx.fillStyle = "#ff8a3a";
@@ -969,9 +1106,16 @@
   // --- 9. Wiring -----------------------------------------------------------
   const overlay = document.getElementById("overlay");
   const gameoverScreen = document.getElementById("gameover");
+  const pauseScreen = document.getElementById("pause");
+  const upgradeScreen = document.getElementById("upgrade");
+  const upgradeSub = document.getElementById("upgrade-sub");
+  const upgradeCards = document.getElementById("upgrade-cards");
   const finalStats = document.getElementById("final-stats");
   const startBtn = document.getElementById("start-btn");
   const retryBtn = document.getElementById("retry-btn");
+  const resumeBtn = document.getElementById("resume-btn");
+  const quitBtn = document.getElementById("quit-btn");
+  const diffBox = document.getElementById("difficulty");
   const bestLine = document.getElementById("best-line");
   const bestVal = document.getElementById("best-val");
   const newbestEl = document.getElementById("newbest");
@@ -979,9 +1123,49 @@
   function hideScreens() {
     overlay.classList.add("hidden");
     gameoverScreen.classList.add("hidden");
+    pauseScreen.classList.add("hidden");
+    upgradeScreen.classList.add("hidden");
   }
   startBtn.addEventListener("click", () => game.start());
   retryBtn.addEventListener("click", () => game.start());
+  resumeBtn.addEventListener("click", () => game.togglePause());
+  quitBtn.addEventListener("click", () => {
+    pauseScreen.classList.add("hidden");
+    game.state = "menu";
+    overlay.classList.remove("hidden");
+  });
+
+  // difficulty selector
+  diffBox.addEventListener("click", (e) => {
+    const btn = e.target.closest(".diff-btn");
+    if (!btn) return;
+    game.setDifficulty(btn.dataset.diff);
+    for (const b of diffBox.querySelectorAll(".diff-btn")) b.classList.toggle("selected", b === btn);
+  });
+
+  // pause toggle
+  addEventListener("keydown", (e) => {
+    const k = e.key.toLowerCase();
+    if ((k === "escape" || k === "p") && (game.state === "playing" || game.state === "paused"))
+      game.togglePause();
+  });
+
+  // build the three upgrade cards
+  function buildUpgradeCards(choices) {
+    upgradeCards.innerHTML = "";
+    for (const up of choices) {
+      const card = document.createElement("button");
+      card.className = "card";
+      const taken = game.upgrades.filter((id) => id === up.id).length;
+      card.innerHTML =
+        `<span class="icon">${up.icon}</span>` +
+        `<span class="name">${up.name}</span>` +
+        `<span class="desc">${up.desc}</span>` +
+        (taken ? `<span class="stacks">OWNED ×${taken}</span>` : "");
+      card.addEventListener("click", () => game.chooseUpgrade(up));
+      upgradeCards.appendChild(card);
+    }
+  }
 
   function frame(t) {
     const dt = Math.min(0.05, (t - game.lastT) / 1000 || 0);
