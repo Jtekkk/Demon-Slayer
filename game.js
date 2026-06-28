@@ -67,8 +67,8 @@
     e.preventDefault();
     if (e.button === 0) {
       const p = canvasPos(e.clientX, e.clientY);
-      if (inMuteBtn(p)) { Music.toggleMute(); return; }   // speaker toggle, not a swing
-      mouse.down = true; game.player && game.player.tryAttack();
+      if (inMuteBtn(p)) { Music.toggleMute(); return; }   // speaker toggle
+      mouse.down = true;                                   // gun fires automatically
     }
     if (e.button === 2) { game.player && game.player.tryDash(); }
   });
@@ -156,6 +156,7 @@
       osc.start(t); osc.stop(t + dur);
     },
     slash() { this.blip(720, 0.12, "sawtooth", 0.10, 240); },
+    shoot() { this.blip(900, 0.06, "square", 0.05, 480); },
     hit()   { this.blip(180, 0.10, "square", 0.12, 90); },
     dash()  { this.blip(440, 0.16, "sine", 0.10, 880); },
     hurt()  { this.blip(140, 0.22, "sawtooth", 0.16, 60); },
@@ -421,36 +422,28 @@
   class Player {
     constructor() {
       this.x = W / 2; this.y = H * 0.78; this.r = 14;
-      this.speed = 3.0; this.maxHp = 100; this.hp = this.maxHp;
+      this.speed = 3.0; this.maxHp = 60; this.hp = this.maxHp;
       this.facing = 0; this.invuln = 0;
-      this.atkCd = 0; this.atkCdTime = 0.28; this.atkTimer = 0; this.atkDur = 0.18;
-      this.atkRange = 64; this.atkArc = Math.PI * 0.85; this.atkDmg = 34;
-      this.swingFrom = 0; this.swingDir = 1; this.hitSet = null;
+      // gun — fires automatically toward the aim
+      this.fireCd = 0; this.fireRate = 0.22; // seconds between shots
+      this.gunDmg = 14; this.shotSpeed = 9; this.shots = 1; this.spread = 0.14;
+      this.pierce = 0; this.bulletR = 5;
       this.dashCd = 0; this.dashCdTime = 0.9; this.dashTimer = 0; this.dashVX = 0; this.dashVY = 0;
       this.combo = 0; this.comboTimer = 0;
-      // upgrade-driven extras
-      this.lifesteal = 0;   // hp healed per kill
-      this.emberLevel = 0;  // ranged slash projectiles per swing
+      this.lifesteal = 0;   // hp healed per kill (upgrade-driven)
     }
 
-    tryAttack() {
-      if (game.state !== "playing" || this.atkCd > 0) return;
-      this.atkCd = this.atkCdTime; this.atkTimer = this.atkDur; this.hitSet = new Set();
-      this.swingDir *= -1;
-      this.swingFrom = this.facing - this.swingDir * this.atkArc / 2;
-      Sound.slash();
-      const tx = this.x + Math.cos(this.facing) * this.atkRange * 0.6;
-      const ty = this.y + Math.sin(this.facing) * this.atkRange * 0.6;
-      burst(tx, ty, 6, { color: "#bfe9ff", spdMin: 1, spdMax: 3, life: 0.3, glow: true, size: 2 });
-      // ranged "ember slash" projectiles, one fan per ember level
-      if (this.emberLevel > 0) {
-        const spread = 0.16;
-        for (let i = 0; i < this.emberLevel; i++) {
-          const off = (i - (this.emberLevel - 1) / 2) * spread;
-          game.spawnPlayerShot(this.facing + off, Math.round(this.atkDmg * 0.55));
-        }
-        Sound.cast();
+    // automatic gun fire — a volley of `shots` bullets fanned around the aim
+    fire() {
+      const n = this.shots;
+      for (let i = 0; i < n; i++) {
+        const off = n > 1 ? (i - (n - 1) / 2) * this.spread : 0;
+        game.spawnPlayerShot(this.facing + off);
       }
+      Sound.shoot();
+      const mx = this.x + Math.cos(this.facing) * this.r * 1.3;
+      const my = this.y + Math.sin(this.facing) * this.r * 1.3;
+      burst(mx, my, 3, { color: "#ffd36a", spdMin: 0.5, spdMax: 2, life: 0.16, glow: true, size: 2 });
     }
 
     tryDash() {
@@ -471,7 +464,7 @@
       // ignore damage outside active play (e.g. a lingering hit the same frame
       // the final boss dies must not flip a victory into a game over)
       if (game.state !== "playing" || this.invuln > 0) return;
-      this.hp -= dmg; this.invuln = 0.7; this.combo = 0;
+      this.hp -= dmg; this.invuln = 0.55; this.combo = 0;
       Sound.hurt(); game.shake(8);
       burst(this.x, this.y, 12, { color: "#c0162a", spdMin: 1, spdMax: 4, life: 0.5 });
       if (this.hp <= 0) { this.hp = 0; game.over(); }
@@ -482,10 +475,9 @@
     comboMult() { return 1 + Math.min(this.combo, 20) * 0.1; }
 
     update(dt) {
-      this.atkCd = Math.max(0, this.atkCd - dt);
+      this.fireCd = Math.max(0, this.fireCd - dt);
       this.dashCd = Math.max(0, this.dashCd - dt);
       this.invuln = Math.max(0, this.invuln - dt);
-      if (this.atkTimer > 0) this.atkTimer -= dt;
       if (this.comboTimer > 0) { this.comboTimer -= dt; if (this.comboTimer <= 0) this.combo = 0; }
 
       // facing: touch aim overrides mouse when active
@@ -493,8 +485,8 @@
       else if (!touch.enabled) this.facing = Math.atan2(mouse.y - this.y, mouse.x - this.x);
       else if (touch.joyVX || touch.joyVY) this.facing = Math.atan2(touch.joyVY, touch.joyVX);
 
-      // auto-slash while aiming on touch
-      if (touch.aimId !== null) this.tryAttack();
+      // the gun always fires
+      if (this.fireCd <= 0) { this.fire(); this.fireCd = this.fireRate; }
 
       if (this.dashTimer > 0) {
         this.dashTimer -= dt;
@@ -512,28 +504,11 @@
           const m = Math.hypot(dx, dy);
           this.x += (dx / m) * this.speed; this.y += (dy / m) * this.speed;
         }
-        if (keys[" "] && this.atkCd === 0) this.tryAttack();
-        if (keys["shift"] && this.dashCd === 0) this.tryDash();
+        if ((keys[" "] || keys["shift"]) && this.dashCd === 0) this.tryDash();
       }
 
       this.x = clamp(this.x, this.r, W - this.r);
       this.y = clamp(this.y, H * 0.34, H - this.r);
-
-      if (this.atkTimer > 0) this._resolveSwing();
-    }
-
-    _resolveSwing() {
-      for (const e of game.enemies) {
-        if (e.dead || this.hitSet.has(e)) continue;
-        const reach = this.atkRange + e.r;
-        if (dist2(this.x, this.y, e.x, e.y) > reach * reach) continue;
-        const ang = Math.atan2(e.y - this.y, e.x - this.x);
-        if (Math.abs(angleDiff(ang, this.facing)) <= this.atkArc / 2) {
-          this.hitSet.add(e);
-          e.hurt(this.atkDmg, this.facing);
-          this.addCombo();
-        }
-      }
     }
 
     draw() {
@@ -549,28 +524,23 @@
         ctx.fillStyle = "#9c1a26"; ctx.fillRect(-this.r * 0.5, -3, this.r * 0.9, 6);
         ctx.fillStyle = "#d9c9a8";
         ctx.beginPath(); ctx.arc(this.r * 0.4, 0, this.r * 0.5, 0, TAU); ctx.fill();
+        // gun barrel pointing along the aim
+        const gunLen = this.r * 1.15, gunY = 4;
+        ctx.fillStyle = "#3a3f4a";
+        ctx.fillRect(this.r * 0.2, gunY - 3, gunLen, 6);
+        ctx.fillStyle = "#20242c";
+        ctx.fillRect(this.r * 0.2 + gunLen - 4, gunY - 4, 4, 8); // muzzle
       }
-      let bladeAng;
-      if (this.atkTimer > 0) {
-        const t = 1 - this.atkTimer / this.atkDur;
-        bladeAng = this.swingDir * (-this.atkArc / 2 + this.atkArc * t);
-      } else bladeAng = this.swingDir * -0.35;
-      ctx.rotate(bladeAng);
-      ctx.strokeStyle = "#e8f6ff"; ctx.lineWidth = 3;
-      ctx.shadowColor = "#9be7ff"; ctx.shadowBlur = 10;
-      ctx.beginPath(); ctx.moveTo(this.r * 0.3, 0); ctx.lineTo(this.r * 0.3 + this.atkRange, 0); ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "#caa14a"; ctx.fillRect(this.r * 0.2, -3, 5, 6);
       ctx.restore();
 
-      if (this.atkTimer > 0) {
-        const t = 1 - this.atkTimer / this.atkDur;
-        ctx.save(); ctx.translate(this.x, this.y);
-        ctx.globalAlpha = (1 - t) * 0.5;
-        ctx.strokeStyle = "#cdefff"; ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(0, 0, this.atkRange * 0.9, this.swingFrom, this.swingFrom + this.swingDir * this.atkArc * t);
-        ctx.stroke(); ctx.restore(); ctx.globalAlpha = 1;
+      // muzzle flash right after firing
+      if (!blink && this.fireCd > this.fireRate - 0.06) {
+        const mx = this.x + Math.cos(this.facing) * this.r * 1.5;
+        const my = this.y + Math.sin(this.facing) * this.r * 1.5;
+        ctx.fillStyle = "rgba(255,210,90,0.85)";
+        ctx.shadowColor = "#ffd23a"; ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(mx, my, 4, 0, TAU); ctx.fill();
+        ctx.shadowBlur = 0;
       }
     }
   }
@@ -1221,6 +1191,7 @@
         if (dist2(s.x, s.y, e.x, e.y) < rr * rr) {
           s.hit.add(e);
           e.hurt(s.dmg, Math.atan2(s.vy, s.vx));
+          if (game.player) game.player.addCombo();   // landing shots builds combo
           s.pierce--;
           if (s.pierce < 0) break;
         }
@@ -1232,9 +1203,9 @@
       ctx.save();
       ctx.translate(s.x, s.y);
       ctx.rotate(Math.atan2(s.vy, s.vx));
-      ctx.fillStyle = "#dff4ff"; ctx.shadowColor = "#9be7ff"; ctx.shadowBlur = 10;
+      ctx.fillStyle = "#ffe6a0"; ctx.shadowColor = "#ffae3a"; ctx.shadowBlur = 10;
       ctx.beginPath();
-      ctx.ellipse(0, 0, s.r * 1.8, s.r * 0.7, 0, 0, TAU);
+      ctx.ellipse(0, 0, s.r * 1.9, s.r * 0.7, 0, 0, TAU);
       ctx.fill();
       ctx.restore();
       ctx.shadowBlur = 0;
@@ -1243,30 +1214,34 @@
 
   // --- 8. Difficulty, upgrades, game loop & wave director ------------------
   const DIFFICULTIES = {
-    easy:   { name: "Cinder",  hpMul: 0.8, dmgMul: 0.7, spawnMul: 1.2, playerHp: 130 },
-    normal: { name: "Ember",   hpMul: 1.0, dmgMul: 1.0, spawnMul: 1.0, playerHp: 100 },
-    hard:   { name: "Inferno", hpMul: 1.35, dmgMul: 1.3, spawnMul: 0.8, playerHp: 80 },
+    easy:   { name: "Cinder",  hpMul: 0.8, dmgMul: 0.85, spawnMul: 1.2, playerHp: 80 },
+    normal: { name: "Ember",   hpMul: 1.0, dmgMul: 1.1, spawnMul: 1.0, playerHp: 60 },
+    hard:   { name: "Inferno", hpMul: 1.35, dmgMul: 1.5, spawnMul: 0.8, playerHp: 40 },
   };
 
   // Roguelite boons offered between waves. `apply(p, g)` mutates the player/game.
   // Stat boons stack; mechanic boons (lifesteal, ember) stack in strength too.
   const UPGRADES = [
-    { id: "blade", icon: "⚔️", name: "Sharpened Blade", desc: "+12 slash damage",
-      apply: (p) => { p.atkDmg += 12; } },
-    { id: "swift", icon: "⚡", name: "Swift Strikes", desc: "Attack 15% faster",
-      apply: (p) => { p.atkCdTime = Math.max(0.12, p.atkCdTime * 0.85); } },
+    { id: "rapid", icon: "🔫", name: "Rapid Fire", desc: "Shoot 15% faster",
+      apply: (p) => { p.fireRate = Math.max(0.06, p.fireRate * 0.85); } },
+    { id: "caliber", icon: "🎯", name: "High Caliber", desc: "+8 bullet damage",
+      apply: (p) => { p.gunDmg += 8; } },
+    { id: "split", icon: "🔱", name: "Split Shot", desc: "+1 bullet per shot",
+      apply: (p) => { p.shots += 1; } },
+    { id: "pierce", icon: "➡️", name: "Piercing Rounds", desc: "Bullets pierce +1 foe",
+      apply: (p) => { p.pierce += 1; } },
+    { id: "heavy", icon: "💥", name: "Heavy Rounds", desc: "Bigger bullets, +5 dmg",
+      apply: (p) => { p.bulletR += 2; p.gunDmg += 5; } },
+    { id: "overcharge", icon: "⚡", name: "Overcharge", desc: "Faster bullets, +3 dmg",
+      apply: (p) => { p.shotSpeed += 2.5; p.gunDmg += 3; } },
     { id: "fleet", icon: "🥾", name: "Fleet Footed", desc: "+18% move speed",
       apply: (p) => { p.speed += 0.55; } },
-    { id: "vital", icon: "❤️", name: "Vital Surge", desc: "+25 max HP & heal 25",
-      apply: (p) => { p.maxHp += 25; p.hp = clamp(p.hp + 25, 0, p.maxHp); } },
+    { id: "vital", icon: "❤️", name: "Vital Surge", desc: "+20 max HP & heal 20",
+      apply: (p) => { p.maxHp += 20; p.hp = clamp(p.hp + 20, 0, p.maxHp); } },
     { id: "phantom", icon: "💨", name: "Phantom Step", desc: "Dash recharges faster",
       apply: (p) => { p.dashCdTime = Math.max(0.4, p.dashCdTime - 0.18); } },
-    { id: "arc", icon: "🌙", name: "Wide Arc", desc: "+reach & wider swing",
-      apply: (p) => { p.atkRange += 12; p.atkArc = Math.min(Math.PI * 1.2, p.atkArc + 0.2); } },
-    { id: "siphon", icon: "🩸", name: "Soul Siphon", desc: "Heal +3 HP per kill",
-      apply: (p) => { p.lifesteal += 3; } },
-    { id: "ember", icon: "🔥", name: "Ember Slash", desc: "Each slash fires a bolt",
-      apply: (p) => { p.emberLevel += 1; } },
+    { id: "siphon", icon: "🩸", name: "Soul Siphon", desc: "Heal +2 HP per kill",
+      apply: (p) => { p.lifesteal += 2; } },
   ];
 
   // Hand-authored 15-wave campaign. Each entry lists enemy id -> count, and an
@@ -1366,12 +1341,13 @@
 
     shake(mag) { if (!Settings.shake) return; this.shakeMag = Math.max(this.shakeMag, mag); this.shakeT = 0.25; },
     spawnPickup(x, y) { this.pickups.push({ x: clamp(x, 10, W - 10), y: clamp(y, H * 0.36, H - 10), r: 7, bob: rand(0, TAU), age: 0, life: 8 }); },
-    spawnPlayerShot(angle, dmg) {
+    spawnPlayerShot(angle) {
+      const p = this.player;
       this.playerShots.push({
-        x: this.player.x + Math.cos(angle) * this.player.r,
-        y: this.player.y + Math.sin(angle) * this.player.r,
-        vx: Math.cos(angle) * 9, vy: Math.sin(angle) * 9,
-        r: 5, dmg, life: 1.1, age: 0, pierce: 1, hit: new Set(),
+        x: p.x + Math.cos(angle) * p.r,
+        y: p.y + Math.sin(angle) * p.r,
+        vx: Math.cos(angle) * p.shotSpeed, vy: Math.sin(angle) * p.shotSpeed,
+        r: p.bulletR, dmg: p.gunDmg, life: 1.3, age: 0, pierce: p.pierce, hit: new Set(),
       });
     },
 

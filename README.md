@@ -1,10 +1,11 @@
 # Demon Slayer — Hellscape
 
-A self-contained browser action game. Play a lone slayer holding the line in a
-volcanic hellscape across a **15-wave campaign** — skeletons clawing from the
-ash, imps swarming the sky, chargers, exploders and cultists, three escalating
-bosses, and a multi-phase finale. Survive to the end and the Hellgate Tyrant
-falls.
+A self-contained browser action game. Play a lone gunner holding the line in a
+volcanic hellscape across a **15-wave campaign** — your gun **fires
+automatically** toward wherever you aim, so it's all about movement, dodging,
+and picking the right upgrades. Skeletons claw from the ash, imps swarm the sky,
+chargers and exploders and cultists pour in, and three escalating bosses lead to
+a multi-phase finale. You're fragile — one bad moment and you're done.
 
 No build step, no install. Just open it.
 
@@ -22,9 +23,8 @@ soundtrack (see below).
 | Action | Keys |
 | --- | --- |
 | Move | `W` `A` `S` `D` or arrow keys |
-| Aim | Mouse |
-| Slash | Left click or `Space` |
-| Dash (brief i-frames) | `Shift` or right click |
+| Aim (gun auto-fires) | Mouse |
+| Dash (brief i-frames) | `Shift`, `Space`, or right click |
 | Pause / resume | `Esc` or `P` |
 | Mute / unmute music | `M` or the speaker (bottom-left) |
 | Settings | **⚙ Settings** on the title or pause screen |
@@ -40,19 +40,20 @@ off. Your choices persist across sessions.
 | Action | Gesture |
 | --- | --- |
 | Move | Drag anywhere on the **left** half — a virtual joystick follows your thumb |
-| Aim + slash | Hold/drag on the **right** half — the slayer faces your thumb and auto-slashes |
+| Aim (gun auto-fires) | Hold/drag on the **right** half — you face and shoot toward your thumb |
 | Dash | Tap the **DASH** button (bottom-right) |
 | Start / retry | Tap the screen |
 
 ## Goal
 
-Survive the **15-wave campaign**. Each wave throws more — and tougher — demons
-at you, with bosses at waves 5, 10, and 15. Chain kills for a **combo**: each
-hit without taking damage raises a score multiplier up to **×3**, so aggressive,
-clean play scores far higher. Dash through danger and grab the green health
-motes demons occasionally drop. The run ends when your health hits zero. Clear
-wave 15 and you win. Your best score is saved locally and shown on the title
-and HUD.
+Survive the **15-wave campaign**. Your gun fires on its own — your job is to
+move, dodge, and aim. Each wave throws more — and tougher — demons at you, with
+bosses at waves 5, 10, and 15. Every **landed shot** builds a **combo** that
+raises a score multiplier up to **×3** (it resets if you take a hit), so
+accurate, untouched play scores far higher. You have very little health, so dash
+through danger and grab the green health motes demons drop. The run ends when
+your health hits zero. Clear wave 15 and you win. Your best score is saved
+locally and shown on the title and HUD.
 
 ### Endless mode
 
@@ -65,27 +66,30 @@ health and damage ramp with depth, and the three bosses recur every five waves
 ### Difficulty
 
 Pick before you start — it scales enemy health, enemy damage, spawn rate, and
-your starting health:
+your (deliberately low) starting health:
 
-- **Cinder** — forgiving (130 HP, weaker demons).
-- **Ember** — the standard run (100 HP).
-- **Inferno** — brutal (80 HP, +35% enemy HP, +30% enemy damage).
+- **Cinder** — forgiving (80 HP, weaker demons).
+- **Ember** — the standard run (60 HP).
+- **Inferno** — brutal (40 HP, +35% enemy HP, +50% enemy damage).
 
-### Boons (roguelite upgrades)
+### Gun upgrades (roguelite power-ups)
 
 After every cleared wave the action pauses and you choose **one of three**
-random boons. They stack, so a run compounds into a build:
+random upgrades. They stack, so a run compounds into a build (fast bullet hose,
+piercing cannon, glass-cannon shotgun, lifesteal tank…):
 
-| Boon | Effect |
+| Upgrade | Effect |
 | --- | --- |
-| ⚔️ Sharpened Blade | +12 slash damage |
-| ⚡ Swift Strikes | Attack 15% faster |
+| 🔫 Rapid Fire | Shoot 15% faster |
+| 🎯 High Caliber | +8 bullet damage |
+| 🔱 Split Shot | +1 bullet per shot (spread) |
+| ➡️ Piercing Rounds | Bullets pierce +1 foe |
+| 💥 Heavy Rounds | Bigger bullets, +5 damage |
+| ⚡ Overcharge | Faster bullets, +3 damage |
 | 🥾 Fleet Footed | +move speed |
-| ❤️ Vital Surge | +25 max HP and heal |
+| ❤️ Vital Surge | +20 max HP and heal |
 | 💨 Phantom Step | Dash recharges faster |
-| 🌙 Wide Arc | Longer reach, wider swing |
 | 🩸 Soul Siphon | Heal per kill (lifesteal) |
-| 🔥 Ember Slash | Every slash also fires a bolt (stacks into a fan) |
 
 ### Enemies
 
@@ -140,8 +144,8 @@ it with `M` or the speaker button.
   `_colossusUpdate` / `_tyrantUpdate` (section 7).
 - The 15-wave campaign: the `WAVES` table in section 8 (enemy id → count per
   wave, plus boss per wave).
-- Player feel: the `Player` constructor in section 6 (`speed`, `atkDmg`,
-  `atkRange`, dash values).
+- Player / gun feel: the `Player` constructor in section 6 (`fireRate`,
+  `gunDmg`, `shots`, `shotSpeed`, `pierce`, `speed`, dash values).
 - Soundtrack: the `MUSIC_TRACKS` list in section 3b.
 
 Loading the page with the URL fragment `#debug` exposes `window.__ds` for
