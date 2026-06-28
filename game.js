@@ -50,6 +50,7 @@
       e.preventDefault();
   });
   addEventListener("keyup", (e) => { keys[e.key.toLowerCase()] = false; });
+  addEventListener("keydown", (e) => { if (e.key.toLowerCase() === "m") Music.toggleMute(); });
 
   function canvasPos(clientX, clientY) {
     const r = canvas.getBoundingClientRect();
@@ -64,7 +65,11 @@
   });
   canvas.addEventListener("mousedown", (e) => {
     e.preventDefault();
-    if (e.button === 0) { mouse.down = true; game.player && game.player.tryAttack(); }
+    if (e.button === 0) {
+      const p = canvasPos(e.clientX, e.clientY);
+      if (inMuteBtn(p)) { Music.toggleMute(); return; }   // speaker toggle, not a swing
+      mouse.down = true; game.player && game.player.tryAttack();
+    }
     if (e.button === 2) { game.player && game.player.tryDash(); }
   });
   addEventListener("mouseup", (e) => { if (e.button === 0) mouse.down = false; });
@@ -81,11 +86,16 @@
   function inDashBtn(p) {
     return dist2(p.x, p.y, DASH_BTN.x, DASH_BTN.y) < DASH_BTN.r * DASH_BTN.r;
   }
+  const MUTE_BTN = { x: 30, y: H - 30, r: 18 };
+  function inMuteBtn(p) {
+    return dist2(p.x, p.y, MUTE_BTN.x, MUTE_BTN.y) < MUTE_BTN.r * MUTE_BTN.r;
+  }
   function handleTouchStart(e) {
     e.preventDefault();
     touch.enabled = true;
     for (const t of e.changedTouches) {
       const p = canvasPos(t.clientX, t.clientY);
+      if (inMuteBtn(p)) { Music.toggleMute(); continue; }
       if (game.state !== "playing") { game.touchTap(p); continue; }
       if (inDashBtn(p)) { game.player && game.player.tryDash(); touch._dashId = t.identifier; }
       else if (p.x < W * 0.5 && touch.joyId === null) {
@@ -152,6 +162,76 @@
     wave()  { this.blip(330, 0.18, "sine", 0.12, 660); },
     cast()  { this.blip(520, 0.14, "triangle", 0.08, 760); },
     boss()  { this.blip(70, 0.6, "sawtooth", 0.18, 150); },
+  };
+
+  // --- 3b. Music — streamed mp3 soundtrack (original tracks by tekk) --------
+  // The soundtrack is optional: if the files are missing the game plays on in
+  // silence (the WebAudio SFX above are independent). Tracks are shuffled into
+  // a looping playlist; a mute toggle (M key / on-screen speaker) persists.
+  const MUSIC_TRACKS = [
+    { src: "music/1.mp3",  title: "Chiptune Hell" },
+    { src: "music/2.mp3",  title: "Chiptune Hell" },
+    { src: "music/3.mp3",  title: "Cumbia de la Muerte" },
+    { src: "music/4.mp3",  title: "Cumbia de la Muerte" },
+    { src: "music/5.mp3",  title: "Cumbia Glitch" },
+    { src: "music/6.mp3",  title: "Retro Racer" },
+    { src: "music/7.mp3",  title: "Retro Racer" },
+    { src: "music/8.mp3",  title: "Retro Racer" },
+    { src: "music/9.mp3",  title: "Retro Racer" },
+    { src: "music/10.mp3", title: "Satan's Bride" },
+    { src: "music/11.mp3", title: "Satan's Bride" },
+  ];
+  const MUSIC_KEY = "demonslayer.muted";
+  const Music = {
+    el: null, order: [], idx: 0, started: false, muted: false, vol: 0.45, fails: 0,
+    init() {
+      if (this.el) return;
+      try { this.muted = localStorage.getItem(MUSIC_KEY) === "1"; } catch (_) {}
+      const a = new Audio();
+      a.volume = this.vol;
+      a.preload = "auto";
+      a.addEventListener("ended", () => this.next());
+      a.addEventListener("error", () => {            // skip a missing/broken file
+        this.fails++;
+        if (this.fails <= MUSIC_TRACKS.length) this.next();
+      });
+      a.addEventListener("playing", () => { this.fails = 0; });
+      this.el = a;
+    },
+    start() {
+      this.init();
+      if (this.started) return;
+      this.started = true;
+      this.order = shuffle(MUSIC_TRACKS.map((_, i) => i));
+      this.idx = 0;
+      if (!this.muted) this._play();
+    },
+    _play() {
+      const t = MUSIC_TRACKS[this.order[this.idx]];
+      this.el.src = t.src;
+      const p = this.el.play();
+      if (p && p.catch) p.catch(() => {});
+      game.nowPlaying = t.title; game.nowPlayingT = 4.5;
+    },
+    next() {
+      if (!this.started || !this.order.length) return;
+      this.idx = (this.idx + 1) % this.order.length;
+      if (!this.muted) this._play();
+    },
+    toggleMute() {
+      this.init();
+      this.muted = !this.muted;
+      try { localStorage.setItem(MUSIC_KEY, this.muted ? "1" : "0"); } catch (_) {}
+      if (this.muted) {
+        this.el.pause();
+      } else if (!this.started) {
+        this.start();                 // first unmute (e.g. on the title) kicks it off
+      } else if (this.el.src) {
+        const p = this.el.play(); if (p && p.catch) p.catch(() => {});
+      } else {
+        this._play();
+      }
+    },
   };
 
   // --- 4. Particles & floating text ----------------------------------------
@@ -348,7 +428,9 @@
     }
 
     hurt(dmg) {
-      if (this.invuln > 0) return;
+      // ignore damage outside active play (e.g. a lingering hit the same frame
+      // the final boss dies must not flip a victory into a game over)
+      if (game.state !== "playing" || this.invuln > 0) return;
       this.hp -= dmg; this.invuln = 0.7; this.combo = 0;
       Sound.hurt(); game.shake(8);
       burst(this.x, this.y, 12, { color: "#c0162a", spdMin: 1, spdMax: 4, life: 0.5 });
@@ -457,6 +539,12 @@
     imp:      { name: "imp", r: 11, hp: 26, speed: 2.0, dmg: 6, score: 14, color: "#7a1f2a", accent: "#ffcf3a", weave: true },
     brute:    { name: "brute", r: 22, hp: 130, speed: 0.7, dmg: 18, score: 30, color: "#5a1410", accent: "#ff5a1e", heavy: true },
     wraith:   { name: "wraith", r: 14, hp: 50, speed: 1.1, dmg: 0, score: 22, color: "#3a2a55", accent: "#b07bff", ranged: true, prefDist: 220, shotDmg: 12 },
+    // charger: closes in, then lunges across the gap in a quick burst
+    hound:    { name: "hound", r: 12, hp: 34, speed: 1.5, dmg: 11, score: 18, color: "#6e1410", accent: "#ff5a2a", charger: true, lungeSpeed: 7.5 },
+    // exploder: slow, fragile, detonates an AoE blast on death — punishes point-blank kills
+    bloater:  { name: "bloater", r: 18, hp: 55, speed: 0.78, dmg: 10, score: 26, color: "#4a5a22", accent: "#b6ff4a", exploder: true, explDmg: 18, explR: 92 },
+    // summoner: backline cultist that keeps distance and raises adds; no contact damage
+    summoner: { name: "summoner", r: 15, hp: 70, speed: 0.95, dmg: 0, score: 34, color: "#2a1640", accent: "#c08aff", summoner: true, prefDist: 250, summons: "imp" },
   };
 
   class Enemy {
@@ -471,6 +559,10 @@
       this.kbx = 0; this.kby = 0; this.atkCd = 0; this.shootCd = rand(1, 2.5);
       this.phase = rand(0, TAU); this.bob = rand(0, TAU);
       this.isBoss = false;
+      // charger (hound) / summoner timers — initialized so behaviour never
+      // reads an undefined field (makeBoss overrides these for bosses)
+      this._lungeT = 0; this._lungeCd = rand(1.4, 2.8); this._lungeA = 0;
+      this._summonCd = rand(3, 5);
     }
 
     hurt(dmg, fromAngle) {
@@ -492,7 +584,23 @@
       const n = this.isBoss ? 60 : 22;
       burst(this.x, this.y, n, { color: col, spdMin: 1, spdMax: this.isBoss ? 9 : 6, life: 0.8, grav: 0.05 });
       burst(this.x, this.y, this.isBoss ? 30 : 10, { color: "#ff6a1a", spdMin: 1, spdMax: 5, life: 0.6, glow: true });
-      if (this.isBoss) { game.shake(16); floatText(this.x, this.y - 30, "FIEND SLAIN", "#ff8a3a", true); }
+
+      // bloater detonation — AoE that can catch the player who killed it up close
+      if (this.def.exploder) {
+        const R = this.def.explR;
+        game.shake(9);
+        for (let i = 0; i < 30; i++) {
+          const a = (i / 30) * TAU, s = rand(3, 7);
+          spawnParticle(this.x, this.y, { vx: Math.cos(a) * s, vy: Math.sin(a) * s, color: i % 2 ? "#b6ff4a" : "#ff8a2a", life: 0.6, size: 4, glow: true, drag: 0.9 });
+        }
+        const pl = game.player;
+        if (pl && pl.hp > 0 && Math.hypot(pl.x - this.x, pl.y - this.y) < R + pl.r) pl.hurt(this.def.explDmg);
+      }
+
+      if (this.isBoss) {
+        game.shake(16);
+        floatText(this.x, this.y - 30, (this.bossName || "FIEND") + " SLAIN", "#ff8a3a", true);
+      }
       const dropChance = this.isBoss ? 1 : 0.12;
       if (Math.random() < dropChance) game.spawnPickup(this.x, this.y);
       if (this.isBoss) { game.spawnPickup(this.x - 30, this.y); game.spawnPickup(this.x + 30, this.y); }
@@ -502,6 +610,8 @@
         p.hp = clamp(p.hp + p.lifesteal, 0, p.maxHp);
         floatText(this.x, this.y - this.r - 6, "+" + p.lifesteal, "#6dff8a");
       }
+      // slaying the final boss wins the campaign
+      if (this.bossKind === "tyrant") game.win();
     }
 
     shootAt(px, py, speed, dmg, color) {
@@ -534,6 +644,41 @@
         this.x += (Math.cos(ang) * move - Math.sin(ang) * strafe) * this.speed;
         this.y += (Math.sin(ang) * move + Math.cos(ang) * strafe) * this.speed;
         if (this.shootCd === 0 && d < 460) { this.shootAt(p.x, p.y, 3.6, this.def.shotDmg, this.def.accent); this.shootCd = rand(1.6, 2.6); }
+      } else if (this.def.summoner) {
+        // backline: hold preferred distance, strafe, and raise adds on a timer
+        const pref = this.def.prefDist;
+        let move = 0;
+        if (d > pref + 40) move = 1; else if (d < pref - 40) move = -1;
+        const strafe = Math.sin(this.bob * 0.4 + this.phase) * 0.5;
+        this.x += (Math.cos(ang) * move - Math.sin(ang) * strafe) * this.speed;
+        this.y += (Math.sin(ang) * move + Math.cos(ang) * strafe) * this.speed;
+        this._summonCd = (this._summonCd ?? rand(3, 5)) - dt;
+        if (this._summonCd <= 0) {
+          this._summonCd = rand(4.5, 7);
+          if (game.enemies.length < 30) {
+            const a = rand(0, TAU);
+            game.enemies.push(new Enemy(this.def.summons, this.x + Math.cos(a) * 40, this.y + Math.sin(a) * 40));
+            burst(this.x, this.y, 8, { color: this.def.accent, life: 0.4, glow: true });
+            floatText(this.x, this.y - this.r - 8, "SUMMON", this.def.accent);
+            Sound.cast();
+          }
+        }
+      } else if (this.def.charger) {
+        // close in, then lunge across the gap in a short high-speed burst
+        if (this._lungeT > 0) {
+          this._lungeT -= dt;
+          this.x += Math.cos(this._lungeA) * this.def.lungeSpeed;
+          this.y += Math.sin(this._lungeA) * this.def.lungeSpeed;
+          if (Math.random() < 0.5)
+            spawnParticle(this.x, this.y, { color: this.def.accent, life: 0.25, size: 3, glow: true, vx: 0, vy: 0 });
+        } else {
+          this.x += Math.cos(ang) * this.speed; this.y += Math.sin(ang) * this.speed;
+          this._lungeCd = (this._lungeCd ?? rand(1.4, 2.8)) - dt;
+          if (this._lungeCd <= 0 && d < 240 && d > 45) {
+            this._lungeT = 0.3; this._lungeA = ang; this._lungeCd = rand(2.2, 3.6);
+            burst(this.x, this.y, 5, { color: this.def.accent, life: 0.3, glow: true, spdMax: 2 });
+          }
+        }
       } else {
         if (this.def.weave) ang += Math.sin(this.bob * 0.5 + this.phase) * 0.6;
         this.x += Math.cos(ang) * this.speed; this.y += Math.sin(ang) * this.speed;
@@ -564,8 +709,21 @@
       }
     }
 
+    // --- boss projectile helpers ---
+    emit(angle, speed, dmg, color, r = 7) {
+      game.enemyShots.push({ x: this.x, y: this.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r, dmg, color, life: 4, age: 0 });
+    }
+    emitFan(n, speed, dmg, color, center, step) {
+      for (let i = 0; i < n; i++) this.emit(center + (i - (n - 1) / 2) * step, speed, dmg, color);
+    }
+    emitRadial(n, speed, dmg, color, offset = 0) {
+      for (let i = 0; i < n; i++) this.emit(offset + (i / n) * TAU, speed, dmg, color);
+    }
+
     _bossUpdate(dt, ang, d) {
-      const p = game.player;
+      if (this.bossKind === "colossus") return this._colossusUpdate(dt, ang, d);
+      if (this.bossKind === "tyrant") return this._tyrantUpdate(dt, ang, d);
+      // archfiend (wave 5): fire volley alternating with a charge
       if (this._charge > 0) {
         this._charge -= dt;
         this.x += Math.cos(this._chargeA) * 6.2;
@@ -576,14 +734,91 @@
         this._volleyCd -= dt; this._chargeCd -= dt;
         if (this._volleyCd <= 0) {
           this._volleyCd = rand(2.4, 3.4);
-          const base = ang;
-          for (let i = -2; i <= 2; i++) {
-            const a = base + i * 0.22;
-            game.enemyShots.push({ x: this.x, y: this.y, vx: Math.cos(a) * 3.4, vy: Math.sin(a) * 3.4, r: 7, dmg: 14, color: "#ff7a2a", life: 4, age: 0 });
-          }
+          this.emitFan(5, 3.4, Math.round(14 * game.diff.dmgMul), "#ff7a2a", ang, 0.22);
           Sound.cast();
         }
         if (this._chargeCd <= 0) { this._chargeCd = rand(4.5, 6.5); this._charge = 0.5; this._chargeA = ang; Sound.boss(); }
+      }
+    }
+
+    // Bone Colossus (wave 10): slow walker that telegraphs a ground slam
+    // (radial shockwave) and periodically raises skeletons.
+    _colossusUpdate(dt, ang, d) {
+      const p = game.player;
+      if (this._slamWind > 0) {
+        this._slamWind -= dt;            // winding up — hold position, ring telegraph drawn in _drawColossus
+        if (this._slamWind <= 0) {
+          game.shake(15); Sound.boss();
+          const R = 175;
+          for (let i = 0; i < 44; i++) {
+            const a = (i / 44) * TAU;
+            spawnParticle(this.x, this.y, { vx: Math.cos(a) * 7, vy: Math.sin(a) * 7, color: "#ffd23a", life: 0.5, size: 4, glow: true, drag: 0.9 });
+          }
+          if (Math.hypot(p.x - this.x, p.y - this.y) < R + p.r) p.hurt(this.dmg);
+          this._slamCd = rand(3.6, 5.2);
+        }
+        return;
+      }
+      if (d > 70) { this.x += Math.cos(ang) * this.speed; this.y += Math.sin(ang) * this.speed; }
+      this._slamCd -= dt; this._summonCd -= dt;
+      if (this._slamCd <= 0 && d < 260) { this._slamWind = 0.8; }
+      if (this._summonCd <= 0) {
+        this._summonCd = rand(5, 7);
+        if (game.enemies.length < 28) {
+          for (let i = 0; i < 2; i++) {
+            const a = rand(0, TAU);
+            game.enemies.push(new Enemy("skeleton", this.x + Math.cos(a) * 64, this.y + Math.sin(a) * 64));
+          }
+          floatText(this.x, this.y - this.r - 12, "RISE!", "#cfc7b0");
+        }
+      }
+    }
+
+    // Hellgate Tyrant (wave 15): three HP-threshold phases that layer
+    // aimed volleys, radial bullet rings, charges, and summons.
+    _tyrantUpdate(dt, ang, d) {
+      const frac = this.hp / this.maxHp;
+      this._phase = frac > 0.66 ? 1 : frac > 0.33 ? 2 : 3;
+      const dm = game.diff.dmgMul;
+
+      if (this._charge > 0) {
+        this._charge -= dt;
+        this.x += Math.cos(this._chargeA) * 6.6;
+        this.y += Math.sin(this._chargeA) * 6.6;
+        if (Math.random() < 0.6) spawnParticle(this.x, this.y, { color: "#ff5a1e", life: 0.3, size: 4, glow: true, vx: 0, vy: 0 });
+        return;
+      }
+      if (d > 90) { this.x += Math.cos(ang) * this.speed; this.y += Math.sin(ang) * this.speed; }
+      this._volleyCd -= dt; this._chargeCd -= dt; this._spiralCd -= dt; this._summonCd -= dt;
+
+      // aimed fan volley (all phases, faster later)
+      if (this._volleyCd <= 0) {
+        this._volleyCd = this._phase === 1 ? rand(2.2, 3) : rand(1.5, 2.1);
+        this.emitFan(this._phase === 1 ? 5 : 7, 3.4, Math.round(14 * dm), "#ff7a2a", ang, 0.2);
+        Sound.cast();
+      }
+      // rotating radial ring (phase 2+)
+      if (this._phase >= 2 && this._spiralCd <= 0) {
+        this._spiralCd = this._phase === 2 ? 2.0 : 1.2;
+        this._spiralA = (this._spiralA || 0) + 0.4;
+        this.emitRadial(this._phase === 3 ? 14 : 10, 2.7, Math.round(11 * dm), "#ff4a6a", this._spiralA);
+        Sound.boss();
+      }
+      // charges — frequent in the final phase
+      if (this._chargeCd <= 0) {
+        this._chargeCd = this._phase === 3 ? rand(2.4, 3.4) : rand(4.5, 6);
+        this._charge = 0.5; this._chargeA = ang; Sound.boss();
+      }
+      // summon adds (phase 2+)
+      if (this._phase >= 2 && this._summonCd <= 0) {
+        this._summonCd = rand(6, 9);
+        if (game.enemies.length < 24) {
+          const types = this._phase === 3 ? ["hound", "imp"] : ["imp"];
+          for (let i = 0; i < 2; i++) {
+            const a = rand(0, TAU);
+            game.enemies.push(new Enemy(types[i % types.length], this.x + Math.cos(a) * 60, this.y + Math.sin(a) * 60));
+          }
+        }
       }
     }
 
@@ -594,10 +829,17 @@
       ctx.fillStyle = "rgba(0,0,0,0.3)";
       ctx.beginPath(); ctx.ellipse(0, this.r * 0.85 - bobY, this.r * 0.9, this.r * 0.35, 0, 0, TAU); ctx.fill();
       const flash = this.hitFlash > 0;
-      if (this.isBoss) this._drawBoss(flash);
+      if (this.isBoss) {
+        if (this.bossKind === "colossus") this._drawColossus(flash);
+        else if (this.bossKind === "tyrant") this._drawTyrant(flash);
+        else this._drawBoss(flash);
+      }
       else if (this.type === "skeleton") this._drawSkeleton(flash);
       else if (this.type === "imp") this._drawImp(flash);
       else if (this.type === "wraith") this._drawWraith(flash);
+      else if (this.type === "hound") this._drawHound(flash);
+      else if (this.type === "bloater") this._drawBloater(flash);
+      else if (this.type === "summoner") this._drawSummoner(flash);
       else this._drawBrute(flash);
 
       if (!this.isBoss && this.hp < this.maxHp) {
@@ -682,6 +924,145 @@
       ctx.beginPath(); ctx.arc(this.r * 0.3, -this.r * 0.2, 3, 0, TAU); ctx.fill();
       ctx.shadowBlur = 0;
     }
+    _drawHound(flash) {
+      const r = this.r;
+      const body = flash ? "#ffffff" : this.def.color;
+      const lunging = this._lungeT > 0;
+      const a = Math.atan2(game.player.y - this.y, game.player.x - this.x);
+      // elongated low body
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 1.25, r * 0.72, 0, 0, TAU); ctx.fill();
+      // legs
+      ctx.strokeStyle = body; ctx.lineWidth = 3;
+      for (const sx of [-r * 0.7, r * 0.5]) {
+        ctx.beginPath(); ctx.moveTo(sx, r * 0.45); ctx.lineTo(sx - 3, r * 0.95); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(sx + 6, r * 0.45); ctx.lineTo(sx + 9, r * 0.95); ctx.stroke();
+      }
+      // spiny back
+      ctx.strokeStyle = flash ? "#fff" : this.def.accent; ctx.lineWidth = 2;
+      for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(i * 7, -r * 0.55); ctx.lineTo(i * 7, -r * 1.05); ctx.stroke(); }
+      // head + glowing eyes toward the player
+      const hx = Math.cos(a) * r * 0.95, hy = Math.sin(a) * r * 0.5;
+      ctx.fillStyle = body; ctx.beginPath(); ctx.arc(hx, hy, r * 0.5, 0, TAU); ctx.fill();
+      ctx.fillStyle = lunging ? "#fff36a" : "#ff3a2a";
+      ctx.shadowColor = "#ff4a2a"; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(hx - 2, hy - 2, 2.3, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(hx + 2, hy + 2, 2.3, 0, TAU); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    _drawBloater(flash) {
+      const r = this.r;
+      const pulse = 0.07 * Math.sin(this.bob * 1.5);
+      const body = flash ? "#ffffff" : this.def.color;
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.arc(0, 0, r * (1 + pulse), 0, TAU); ctx.fill();
+      // pressurized glowing cracks
+      ctx.strokeStyle = this.def.accent; ctx.lineWidth = 2;
+      ctx.shadowColor = this.def.accent; ctx.shadowBlur = 10 + 6 * Math.sin(this.bob * 1.5);
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.6, 0); ctx.lineTo(r * 0.6, 0);
+      ctx.moveTo(0, -r * 0.6); ctx.lineTo(0, r * 0.6);
+      ctx.moveTo(-r * 0.42, -r * 0.42); ctx.lineTo(r * 0.42, r * 0.42);
+      ctx.stroke(); ctx.shadowBlur = 0;
+      // beady eyes
+      ctx.fillStyle = "#0e0a06";
+      ctx.beginPath(); ctx.arc(-r * 0.25, -r * 0.12, 2, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(r * 0.25, -r * 0.12, 2, 0, TAU); ctx.fill();
+    }
+    _drawSummoner(flash) {
+      const r = this.r;
+      const body = flash ? "#ffffff" : this.def.color;
+      const sway = Math.sin(this.bob * 0.5) * 2;
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 1.2);
+      ctx.quadraticCurveTo(r + sway, 0, r * 0.7, r);
+      ctx.quadraticCurveTo(0, r * 0.8, -r * 0.7, r);
+      ctx.quadraticCurveTo(-r - sway, 0, 0, -r * 1.2);
+      ctx.fill();
+      ctx.fillStyle = "#0c0814";
+      ctx.beginPath(); ctx.ellipse(0, -r * 0.5, r * 0.4, r * 0.55, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = this.def.accent; ctx.shadowColor = this.def.accent; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(-3, -r * 0.55, 2, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(3, -r * 0.55, 2, 0, TAU); ctx.fill();
+      // conjuring sigil orb
+      const orb = 0.5 + 0.5 * Math.sin(this.bob * 1.2);
+      ctx.globalAlpha = 0.5 + 0.5 * orb;
+      ctx.beginPath(); ctx.arc(0, r * 0.5, 5 + orb * 3, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    }
+    _drawColossus(flash) {
+      const r = this.r;
+      const body = flash ? "#ffffff" : (this.bossColor || "#cfc7b0");
+      // slam telegraph ring expanding at its feet
+      if (this._slamWind > 0) {
+        const prog = 1 - this._slamWind / 0.8;
+        ctx.globalAlpha = 0.3 + 0.4 * prog;
+        ctx.strokeStyle = "#ffd23a"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(0, 0, 175 * prog, 0, TAU); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      // huge arms
+      ctx.strokeStyle = body; ctx.lineWidth = 11; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(-r * 0.7, -r * 0.5); ctx.lineTo(-r * 1.35, r * 0.45); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(r * 0.7, -r * 0.5); ctx.lineTo(r * 1.35, r * 0.45); ctx.stroke();
+      ctx.lineCap = "butt";
+      // ribcage torso
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 0.8, r, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = flash ? "#ddd" : "#9a937e"; ctx.lineWidth = 3;
+      for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(-r * 0.55, i * 8 + 2); ctx.lineTo(r * 0.55, i * 8 + 2); ctx.stroke(); }
+      // skull
+      ctx.fillStyle = body; ctx.beginPath(); ctx.arc(0, -r * 1.05, r * 0.5, 0, TAU); ctx.fill();
+      ctx.fillStyle = "#ff3a2a"; ctx.shadowColor = "#ff3a2a"; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(-r * 0.18, -r * 1.08, 4, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(r * 0.18, -r * 1.08, 4, 0, TAU); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    _drawTyrant(flash) {
+      const r = this.r;
+      const body = flash ? "#ffffff" : (this.bossColor || "#23060a");
+      const phase = this._phase || 1;
+      const aura = phase === 3 ? "#ff2a4a" : phase === 2 ? "#ff6a2a" : "#ff9a2a";
+      // pulsing phase aura
+      ctx.globalAlpha = 0.22 + 0.14 * Math.sin(this.bob * 2);
+      ctx.fillStyle = aura; ctx.shadowColor = aura; ctx.shadowBlur = 24;
+      ctx.beginPath(); ctx.arc(0, 0, r * 1.5, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+      // wings
+      ctx.fillStyle = flash ? "#bb8888" : "#1a0508";
+      const wf = Math.sin(this.bob * 0.8) * 0.25;
+      ctx.beginPath(); ctx.moveTo(0, -r * 0.2);
+      ctx.quadraticCurveTo(-r * 2.4, -r * (1.2 + wf), -r * 2.6, r * 0.4);
+      ctx.quadraticCurveTo(-r * 1.2, r * 0.1, 0, -r * 0.2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0, -r * 0.2);
+      ctx.quadraticCurveTo(r * 2.4, -r * (1.2 + wf), r * 2.6, r * 0.4);
+      ctx.quadraticCurveTo(r * 1.2, r * 0.1, 0, -r * 0.2); ctx.fill();
+      // torso
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 0.95, r * 1.05, 0, 0, TAU); ctx.fill();
+      // molten cracks
+      ctx.strokeStyle = aura; ctx.lineWidth = 3; ctx.shadowColor = aura; ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.7); ctx.lineTo(0, r * 0.8);
+      ctx.moveTo(-r * 0.5, -r * 0.2); ctx.lineTo(-r * 0.1, r * 0.3);
+      ctx.moveTo(r * 0.5, -r * 0.3); ctx.lineTo(r * 0.1, r * 0.4);
+      ctx.stroke(); ctx.shadowBlur = 0;
+      // horns
+      ctx.strokeStyle = "#100305"; ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.5, -r * 0.8); ctx.quadraticCurveTo(-r * 1.5, -r * 1.4, -r * 0.85, -r * 1.8);
+      ctx.moveTo(r * 0.5, -r * 0.8); ctx.quadraticCurveTo(r * 1.5, -r * 1.4, r * 0.85, -r * 1.8);
+      ctx.stroke();
+      // eyes
+      ctx.fillStyle = "#fff36a"; ctx.shadowColor = aura; ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.3, 5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(r * 0.3, -r * 0.3, 5, 0, TAU); ctx.fill();
+      ctx.shadowBlur = 0;
+      // maw
+      ctx.fillStyle = "#150305";
+      ctx.beginPath(); ctx.ellipse(0, r * 0.3, r * 0.4, r * 0.2, 0, 0, TAU); ctx.fill();
+    }
     _drawBoss(flash) {
       const r = this.r;
       const body = flash ? "#ffffff" : "#3a0a0c";
@@ -729,16 +1110,29 @@
     }
   }
 
-  function makeBoss(wave) {
-    const b = new Enemy("brute", W / 2, H * 0.34);
+  const BOSS_DEFS = {
+    archfiend: { title: "THE ARCHFIEND",     r: 40, hp: 560,  speed: 0.62, dmg: 22, score: 200,  color: "#3a0a0c" },
+    colossus:  { title: "THE BONE COLOSSUS", r: 52, hp: 1150, speed: 0.45, dmg: 26, score: 450,  color: "#cfc7b0" },
+    tyrant:    { title: "THE HELLGATE TYRANT", r: 46, hp: 1950, speed: 0.7, dmg: 24, score: 1000, color: "#23060a" },
+  };
+
+  function makeBoss(kind, wave) {
+    const def = BOSS_DEFS[kind] || BOSS_DEFS.archfiend;
+    const b = new Enemy("brute", W / 2, H * 0.30);
     b.isBoss = true;
-    b.r = 40;
-    b.maxHp = Math.round((360 + wave * 70) * game.diff.hpMul);
+    b.bossKind = kind;
+    b.r = def.r;
+    b.maxHp = Math.round(def.hp * game.diff.hpMul);
     b.hp = b.maxHp;
-    b.speed = 0.62;
-    b.dmg = Math.round(22 * game.diff.dmgMul);
-    b.def = { ...ENEMY_TYPES.brute, score: 200, name: "archfiend" };
+    b.speed = def.speed;
+    b.dmg = Math.round(def.dmg * game.diff.dmgMul);
+    b.bossName = def.title;
+    b.bossColor = def.color;
+    b.def = { ...ENEMY_TYPES.brute, score: def.score, name: kind, heavy: true };
+    // attack timers used across the various boss behaviours
     b._volleyCd = 2.0; b._chargeCd = 4.0; b._charge = 0; b._chargeA = 0;
+    b._slamCd = 3.0; b._slamWind = 0; b._summonCd = 4.5;
+    b._spiralCd = 3.0; b._spiralA = 0; b._phase = 1;
     return b;
   }
 
@@ -830,16 +1224,47 @@
       apply: (p) => { p.emberLevel += 1; } },
   ];
 
+  // Hand-authored 15-wave campaign. Each entry lists enemy id -> count, and an
+  // optional boss. Difficulty multipliers scale enemy stats on top of this; the
+  // player gains one stacking boon per cleared wave, so density/variety ramp up.
+  const WAVES = [
+    { spawn: { skeleton: 6 } },                                              // 1 — first blood
+    { spawn: { skeleton: 6, imp: 3 } },                                      // 2 — fliers join
+    { spawn: { skeleton: 5, imp: 4, hound: 2 } },                            // 3 — chargers appear
+    { spawn: { skeleton: 4, imp: 3, hound: 3, brute: 1 } },                  // 4 — first brute
+    { boss: "archfiend", spawn: { skeleton: 2 } },                           // 5 — BOSS
+    { spawn: { imp: 4, hound: 3, brute: 2, bloater: 1 } },                   // 6 — exploders appear
+    { spawn: { skeleton: 6, wraith: 2, bloater: 2 } },                       // 7 — ranged pressure
+    { spawn: { hound: 4, imp: 3, wraith: 2, summoner: 1 } },                 // 8 — summoner appears
+    { spawn: { brute: 3, bloater: 3, wraith: 2, hound: 2 } },               // 9 — heavy & explosive
+    { boss: "colossus", spawn: { hound: 2 } },                               // 10 — BOSS
+    { spawn: { hound: 5, imp: 3, summoner: 2, wraith: 2 } },                 // 11 — speed + summons
+    { spawn: { brute: 4, bloater: 4, wraith: 3 } },                          // 12 — tank wall
+    { spawn: { hound: 6, summoner: 3, wraith: 3, brute: 2 } },              // 13 — chaos
+    { spawn: { brute: 4, bloater: 4, wraith: 4, hound: 4, summoner: 2 } },   // 14 — the gauntlet
+    { boss: "tyrant", spawn: {} },                                           // 15 — FINALE
+  ];
+  const FINAL_WAVE = WAVES.length;
+
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
   const BEST_KEY = "demonslayer.best";
   const game = {
     state: "menu", player: null,
     enemies: [], pickups: [], enemyShots: [], playerShots: [],
     score: 0, kills: 0, wave: 0,
-    waveQueue: 0, spawnTimer: 0, betweenTimer: 0,
+    spawnList: [], spawnTimer: 0, betweenTimer: 0,
     shakeT: 0, shakeMag: 0, lastT: 0,
     best: 0, newBest: false,
     diff: DIFFICULTIES.normal, diffKey: "normal",
     upgrades: [], pendingOffer: null,
+    nowPlaying: "", nowPlayingT: 0,
 
     loadBest() {
       try { this.best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; }
@@ -857,13 +1282,13 @@
       this.enemies = []; this.pickups = []; this.enemyShots = []; this.playerShots = [];
       particles.length = 0; floaters.length = 0;
       this.score = 0; this.kills = 0; this.wave = 0;
-      this.waveQueue = 0; this.spawnTimer = 0; this.betweenTimer = 1.2;
+      this.spawnList = []; this.spawnTimer = 0; this.betweenTimer = 1.2;
       this.shakeT = 0; this.newBest = false;
       this.upgrades = []; this.pendingOffer = null;
       Background.init();
     },
 
-    start() { Sound.init(); this.reset(); this.state = "playing"; hideScreens(); },
+    start() { Sound.init(); Music.start(); this.reset(); this.state = "playing"; hideScreens(); },
 
     setDifficulty(key) { if (DIFFICULTIES[key]) { this.diffKey = key; this.diff = DIFFICULTIES[key]; } },
 
@@ -874,7 +1299,7 @@
 
     // tapping a screen on touch devices acts like the screen button
     touchTap() {
-      if (this.state === "menu" || this.state === "gameover") this.start();
+      if (this.state === "menu" || this.state === "gameover" || this.state === "victory") this.start();
     },
 
     over() {
@@ -924,61 +1349,79 @@
 
     bossAlive() { return this.enemies.find((e) => e.isBoss) || null; },
 
+    win() {
+      // only a live run can be won — never override a death (or re-enter victory)
+      // that resolved earlier in the same frame
+      if (this.state !== "playing") return;
+      this.state = "victory";
+      this.score += 500; // clear bonus
+      if (this.score > this.best) { this.best = this.score; this.newBest = true; this.saveBest(); }
+      victoryNewbest.classList.toggle("hidden", !this.newBest);
+      victoryStats.textContent =
+        `${this.kills} demons slain · ${this.score} points · ${this.diff.name} difficulty`;
+      victoryScreen.classList.remove("hidden");
+    },
+
     startNextWave() {
       this.wave++;
       Sound.wave();
-      if (this.wave % 5 === 0) {
-        // boss wave: the archfiend plus a few adds
-        this.enemies.push(makeBoss(this.wave));
+      const def = WAVES[this.wave - 1];
+      // build & shuffle this wave's spawn list from the composition table
+      const list = [];
+      const comp = (def && def.spawn) || {};
+      for (const type in comp) for (let i = 0; i < comp[type]; i++) list.push(type);
+      // fallback for any wave past the authored campaign (endless safety)
+      if (!def) { for (let i = 0; i < 6 + this.wave; i++) list.push(["skeleton", "imp", "hound", "brute", "wraith"][randInt(0, 4)]); }
+      this.spawnList = shuffle(list);
+
+      if (def && def.boss) {
+        const b = makeBoss(def.boss, this.wave);
+        this.enemies.push(b);
         Sound.boss();
-        this.waveQueue = 3;
-        this.spawnTimer = 1.5;
-        floatText(W / 2, H * 0.45, "THE ARCHFIEND RISES", "#ff4a3c", true);
+        this.spawnTimer = 1.4; // brief delay before adds trickle in
+        floatText(W / 2, H * 0.45, b.bossName + " RISES", "#ff4a3c", true);
       } else {
-        this.waveQueue = 4 + this.wave * 2;
         this.spawnTimer = 0;
         floatText(W / 2, H * 0.45, `WAVE ${this.wave}`, "#ff8a3a", true);
       }
     },
 
-    spawnEnemy() {
+    spawnOne(type) {
       const edge = randInt(0, 3); const pad = 30; let x, y;
       if (edge === 0) { x = rand(0, W); y = H * 0.32 - pad; }
       else if (edge === 1) { x = W + pad; y = rand(H * 0.34, H); }
       else if (edge === 2) { x = rand(0, W); y = H + pad; }
       else { x = -pad; y = rand(H * 0.34, H); }
-
-      let type = "skeleton";
-      const roll = Math.random();
-      if (this.wave >= 4 && roll < 0.18) type = "wraith";
-      else if (this.wave >= 3 && roll < 0.30) type = "brute";
-      else if (this.wave >= 2 && roll < 0.55) type = "imp";
       this.enemies.push(new Enemy(type, x, y));
     },
 
     update(dt) {
       Background.update(dt);
+      if (this.nowPlayingT > 0) this.nowPlayingT -= dt;
       if (this.state !== "playing") { updateParticles(dt); return; }
 
       this.player.update(dt);
 
-      if (this.waveQueue > 0) {
+      if (this.spawnList.length > 0) {
         this.spawnTimer -= dt;
         if (this.spawnTimer <= 0) {
-          this.spawnEnemy(); this.waveQueue--;
-          this.spawnTimer = Math.max(0.3, (1.1 - this.wave * 0.05) * this.diff.spawnMul);
+          this.spawnOne(this.spawnList.shift());
+          this.spawnTimer = Math.max(0.25, 0.62 * this.diff.spawnMul);
         }
       } else if (this.enemies.length === 0) {
         this.betweenTimer -= dt;
         if (this.betweenTimer <= 0) {
           this.betweenTimer = 1.0;
-          // wave 0 = first wave begins with no boon; after that, offer an upgrade
+          // wave 0 = first wave begins with no boon; after that, offer a boon.
+          // The final wave is ended by slaying its boss (game.win), never here.
           if (this.wave === 0) this.startNextWave();
-          else this.offerUpgrade();
+          else if (this.wave < FINAL_WAVE) this.offerUpgrade();
         }
       }
 
-      for (const e of this.enemies) e.update(dt);
+      // iterate a snapshot: enemies summoned this frame (by summoners/bosses)
+      // are appended to this.enemies but should not act until next frame
+      for (const e of this.enemies.slice()) e.update(dt);
       this.enemies = this.enemies.filter((e) => !e.dead);
       updateEnemyShots(dt);
       updatePlayerShots(dt);
@@ -1031,6 +1474,41 @@
 
       this.drawHUD();
       if (touch.enabled && this.state === "playing") this.drawTouchControls();
+      this.drawMusicUI();
+    },
+
+    drawMusicUI() {
+      const b = MUTE_BTN;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      // button disc
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = "#1a0f1c";
+      ctx.beginPath(); ctx.arc(0, 0, b.r, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+      // speaker glyph
+      ctx.fillStyle = Music.muted ? "#7a6f72" : "#ffb347";
+      ctx.beginPath();
+      ctx.moveTo(-7, -3); ctx.lineTo(-3, -3); ctx.lineTo(1, -7);
+      ctx.lineTo(1, 7); ctx.lineTo(-3, 3); ctx.lineTo(-7, 3); ctx.closePath();
+      ctx.fill();
+      if (Music.muted) {
+        ctx.strokeStyle = "#ff5a5a"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-8, -8); ctx.lineTo(9, 9); ctx.stroke();
+      } else {
+        ctx.strokeStyle = "#ffb347"; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.arc(2, 0, 5, -0.8, 0.8); ctx.stroke();
+        ctx.beginPath(); ctx.arc(2, 0, 8, -0.7, 0.7); ctx.stroke();
+      }
+      ctx.restore();
+      // now-playing label (fades after a track change)
+      if (this.nowPlayingT > 0 && !Music.muted) {
+        ctx.globalAlpha = Math.min(1, this.nowPlayingT);
+        ctx.fillStyle = "#cdbfae"; ctx.textAlign = "left";
+        ctx.font = "italic 12px 'Trebuchet MS', sans-serif";
+        ctx.fillText(`♪ ${this.nowPlaying}`, b.x + b.r + 8, b.y + 4);
+        ctx.globalAlpha = 1;
+      }
     },
 
     drawHUD() {
@@ -1058,8 +1536,8 @@
       ctx.fillStyle = "#ffd36a"; ctx.font = "bold 22px 'Trebuchet MS', sans-serif";
       ctx.fillText(`${this.score}`, W - 20, 34);
       ctx.fillStyle = "#cdbfae"; ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
-      ctx.fillText(`WAVE ${this.wave || 1}`, W - 20, 54);
-      ctx.fillText(`${this.enemies.length} demons`, W - 20, 72);
+      ctx.fillText(`WAVE ${this.wave || 1} / ${FINAL_WAVE}`, W - 20, 54);
+      ctx.fillText(`${this.enemies.length + this.spawnList.length} demons`, W - 20, 72);
       ctx.fillStyle = "#8a7f72"; ctx.font = "11px 'Trebuchet MS', sans-serif";
       ctx.fillText(`BEST ${this.best} · ${this.diff.name}`, W - 20, 90);
 
@@ -1080,7 +1558,10 @@
         ctx.fillStyle = bg; ctx.fillRect(x, y, w * (boss.hp / boss.maxHp), 12);
         ctx.textAlign = "center"; ctx.fillStyle = "#ffd36a";
         ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
-        ctx.fillText("THE ARCHFIEND", W / 2, y - 6);
+        const label = boss.bossKind === "tyrant"
+          ? `${boss.bossName} — PHASE ${boss._phase || 1}/3`
+          : boss.bossName || "BOSS";
+        ctx.fillText(label, W / 2, y - 6);
       }
     },
 
@@ -1110,9 +1591,13 @@
   const upgradeScreen = document.getElementById("upgrade");
   const upgradeSub = document.getElementById("upgrade-sub");
   const upgradeCards = document.getElementById("upgrade-cards");
+  const victoryScreen = document.getElementById("victory");
+  const victoryStats = document.getElementById("victory-stats");
+  const victoryNewbest = document.getElementById("victory-newbest");
   const finalStats = document.getElementById("final-stats");
   const startBtn = document.getElementById("start-btn");
   const retryBtn = document.getElementById("retry-btn");
+  const victoryBtn = document.getElementById("victory-btn");
   const resumeBtn = document.getElementById("resume-btn");
   const quitBtn = document.getElementById("quit-btn");
   const diffBox = document.getElementById("difficulty");
@@ -1125,9 +1610,11 @@
     gameoverScreen.classList.add("hidden");
     pauseScreen.classList.add("hidden");
     upgradeScreen.classList.add("hidden");
+    victoryScreen.classList.add("hidden");
   }
   startBtn.addEventListener("click", () => game.start());
   retryBtn.addEventListener("click", () => game.start());
+  victoryBtn.addEventListener("click", () => game.start());
   resumeBtn.addEventListener("click", () => game.togglePause());
   quitBtn.addEventListener("click", () => {
     pauseScreen.classList.add("hidden");
@@ -1176,11 +1663,12 @@
   }
 
   game.loadBest();
+  Music.init();
   if (game.best > 0) { bestVal.textContent = game.best; bestLine.classList.remove("hidden"); }
   Background.init();
   requestAnimationFrame(frame);
 
   // Optional debug hook for automated testing only — inert during normal play.
   // Enable by loading the page with the URL fragment "#debug".
-  if (location.hash === "#debug") window.__ds = { game, makeBoss, Enemy };
+  if (location.hash === "#debug") window.__ds = { game, makeBoss, Enemy, Music };
 })();

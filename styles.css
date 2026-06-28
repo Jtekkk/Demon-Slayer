@@ -74,6 +74,13 @@ h1.dead {
   background-clip: text;
   color: transparent;
 }
+h1.won {
+  background: linear-gradient(180deg, #ffe9a0, #ffae3a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 40px rgba(255, 180, 60, 0.5);
+}
 
 .subtitle {
   margin-top: -0.3rem;

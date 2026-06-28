@@ -1,16 +1,19 @@
 # Demon Slayer — Hellscape
 
 A self-contained browser action game. Play a lone slayer holding the line in a
-volcanic hellscape against endless waves of demons — skeletons clawing from the
-ash, imps swarming the sky, and molten brutes lumbering from the volcano's heart.
+volcanic hellscape across a **15-wave campaign** — skeletons clawing from the
+ash, imps swarming the sky, chargers, exploders and cultists, three escalating
+bosses, and a multi-phase finale. Survive to the end and the Hellgate Tyrant
+falls.
 
-No build step, no install, no external assets. Just open it.
+No build step, no install. Just open it.
 
 ## Play
 
 Open `index.html` in any modern browser (double-click it, or serve the folder).
 
-That's it — everything (art, sound, physics) is generated in code.
+All art and sound effects are generated in code; the music is a bundled
+soundtrack (see below).
 
 ## Controls
 
@@ -23,6 +26,7 @@ That's it — everything (art, sound, physics) is generated in code.
 | Slash | Left click or `Space` |
 | Dash (brief i-frames) | `Shift` or right click |
 | Pause / resume | `Esc` or `P` |
+| Mute / unmute music | `M` or the speaker (bottom-left) |
 
 **Touch / mobile** (controls appear automatically on first touch)
 
@@ -35,11 +39,11 @@ That's it — everything (art, sound, physics) is generated in code.
 
 ## Goal
 
-Survive escalating waves. Each wave throws more — and tougher — demons at you.
-Chain kills for a combo, dash through danger, and grab the green health motes
-demons occasionally drop. Score is tallied per kill; the run ends when your
-health hits zero. Your best score is saved locally and shown on the title and
-HUD.
+Survive the **15-wave campaign**. Each wave throws more — and tougher — demons
+at you, with bosses at waves 5, 10, and 15. Chain kills for a combo, dash
+through danger, and grab the green health motes demons occasionally drop. Score
+is tallied per kill; the run ends when your health hits zero. Clear wave 15 and
+you win. Your best score is saved locally and shown on the title and HUD.
 
 ### Difficulty
 
@@ -70,37 +74,57 @@ random boons. They stack, so a run compounds into a build:
 
 - **Skeleton** — steady melee walker. The bread and butter.
 - **Imp** — fast, weaving flyer. Low health, hard to pin down.
-- **Brute** — slow, heavily armored, hits hard, resists knockback. From wave 3.
-- **Wraith** — hooded caster that keeps its distance and lobs homing-less
-  fireballs. Deals no contact damage but punishes standing still. From wave 4.
-- **Archfiend (boss)** — every 5th wave a winged boss rises with its own health
-  bar, alternating a five-shot fire volley with a telegraphed charge. Slaying it
-  drops a burst of health motes.
+- **Hound** — charger that closes in, then lunges across the gap. From wave 3.
+- **Brute** — slow, heavily armored, hits hard, resists knockback. From wave 4.
+- **Bloater** — slow exploder that detonates an AoE blast on death — punishes
+  point-blank kills. From wave 6.
+- **Wraith** — hooded caster that keeps its distance and lobs fireballs. No
+  contact damage but punishes standing still. From wave 7.
+- **Summoner** — backline cultist that raises adds; chase it down. From wave 8.
 
-## Art & assets
+### Bosses
 
-All visuals are drawn procedurally on an HTML5 canvas and all sound is
-synthesized with the Web Audio API at runtime. There are **no image, font, or
-audio files** in this project, so nothing here is third-party or needs
-licensing — it is entirely original and freely distributable.
+- **The Archfiend** (wave 5) — winged fiend: five-shot fire volley + telegraphed
+  charge.
+- **The Bone Colossus** (wave 10) — pale giant: telegraphed ground-slam
+  shockwave and raises skeletons.
+- **The Hellgate Tyrant** (wave 15) — multi-phase finale that layers aimed
+  volleys, rotating radial bullet rings, charges, and summons as its health
+  drops through three phases. Slay it to win.
+
+## Art, sound & soundtrack
+
+All visuals are drawn procedurally on an HTML5 canvas (no image or font files),
+and all gameplay sound effects are synthesized with the Web Audio API at
+runtime — so the engine itself is entirely original and self-contained.
+
+The background **soundtrack** in `music/` is original music by *tekk* (tracks:
+*Chiptune Hell*, *Cumbia de la Muerte*, *Cumbia Glitch*, *Retro Racer*,
+*Satan's Bride*), shuffled into a looping playlist. It is optional: if the
+`music/` files are absent the game runs fine in silence. Toggle it with `M` or
+the speaker button.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | Page shell, title screen, game-over screen |
+| `index.html` | Page shell, title/pause/upgrade/victory/game-over screens |
 | `styles.css` | Layout and overlay styling |
-| `game.js` | The entire game: loop, background, player, enemies, particles, audio, HUD |
+| `game.js` | The entire game: loop, background, player, enemies, bosses, particles, audio, music, HUD |
+| `music/*.mp3` | Bundled soundtrack (original music by tekk) |
 
 ## Tweaking
 
 `game.js` is organized into clearly commented sections. A few quick knobs:
 
 - Enemy stats: the `ENEMY_TYPES` table near the top of section 7.
-- Boss stats / attacks: `makeBoss()` and `Enemy._bossUpdate()` in section 7.
-- Wave scaling & boss cadence: `startNextWave()` / `spawnEnemy()` in section 8.
+- Boss stats: the `BOSS_DEFS` table; attack patterns in `Enemy._bossUpdate` /
+  `_colossusUpdate` / `_tyrantUpdate` (section 7).
+- The 15-wave campaign: the `WAVES` table in section 8 (enemy id → count per
+  wave, plus boss per wave).
 - Player feel: the `Player` constructor in section 6 (`speed`, `atkDmg`,
   `atkRange`, dash values).
+- Soundtrack: the `MUSIC_TRACKS` list in section 3b.
 
 Loading the page with the URL fragment `#debug` exposes `window.__ds` for
 automated testing. It is inert during normal play.
