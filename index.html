@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Demon Slayer — Hellscape</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game-shell">
+    <canvas id="game" width="960" height="540"></canvas>
+
+    <!-- Start / menu overlay -->
+    <div id="overlay" class="overlay">
+      <div class="panel">
+        <h1>DEMON&nbsp;SLAYER</h1>
+        <p class="subtitle">Hold the bridge over the lava. Cut down what crawls out of the dark.</p>
+        <ul class="controls">
+          <li><b>A&nbsp;/&nbsp;D</b> or <b>←&nbsp;→</b> — move</li>
+          <li><b>Space</b> / <b>W</b> / <b>↑</b> — jump</li>
+          <li><b>J</b> or <b>Click</b> — slash</li>
+          <li><b>K</b> — dash (brief invulnerability)</li>
+          <li><b>P</b> or <b>Esc</b> — pause</li>
+        </ul>
+        <button id="start-btn">ENTER THE HELLSCAPE</button>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hud hidden">
+      <div class="hud-row">
+        <div class="hearts" id="hearts"></div>
+        <div class="stats">
+          <span>WAVE <b id="wave">1</b></span>
+          <span>SLAIN <b id="kills">0</b></span>
+          <span>SCORE <b id="score">0</b></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game over -->
+    <div id="gameover" class="overlay hidden">
+      <div class="panel">
+        <h1 class="dead">YOU FELL</h1>
+        <p class="subtitle">The lava claims another slayer.</p>
+        <p class="final">Demons slain: <b id="final-kills">0</b><br/>Final score: <b id="final-score">0</b><br/>Best: <b id="best-score">0</b></p>
+        <button id="retry-btn">RISE AGAIN</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
