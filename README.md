@@ -27,6 +27,13 @@ soundtrack (see below).
 | Dash (brief i-frames) | `Shift` or right click |
 | Pause / resume | `Esc` or `P` |
 | Mute / unmute music | `M` or the speaker (bottom-left) |
+| Settings | **⚙ Settings** on the title or pause screen |
+
+### Settings
+
+A settings panel (reachable from the title screen and from the pause menu) lets
+you adjust **music volume**, **SFX volume**, and toggle **screen shake** on or
+off. Your choices persist across sessions.
 
 **Touch / mobile** (controls appear automatically on first touch)
 

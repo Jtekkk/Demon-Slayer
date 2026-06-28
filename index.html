@@ -36,6 +36,7 @@
           <button class="diff-btn" data-diff="hard">Inferno</button>
         </div>
         <button id="start-btn" class="btn">ENTER THE HELLSCAPE</button>
+        <button id="settings-btn" class="btn btn-ghost">⚙ SETTINGS</button>
       </div>
     </div>
 
@@ -45,7 +46,32 @@
         <h1>PAUSED</h1>
         <p class="blurb">Catch your breath. The horde waits.</p>
         <button id="resume-btn" class="btn">RESUME</button>
+        <button id="pause-settings-btn" class="btn btn-ghost">⚙ SETTINGS</button>
         <button id="quit-btn" class="btn btn-ghost">ABANDON RUN</button>
+      </div>
+    </div>
+
+    <!-- Settings modal (opens over the title or pause screen) -->
+    <div id="settings" class="screen hidden settings-screen">
+      <div class="panel">
+        <h1>SETTINGS</h1>
+        <div class="settings-rows">
+          <div class="set-row">
+            <span class="set-label">Music volume</span>
+            <input id="set-music" class="slider" type="range" min="0" max="100" value="45" />
+            <span id="set-music-val" class="set-val">45</span>
+          </div>
+          <div class="set-row">
+            <span class="set-label">SFX volume</span>
+            <input id="set-sfx" class="slider" type="range" min="0" max="100" value="100" />
+            <span id="set-sfx-val" class="set-val">100</span>
+          </div>
+          <div class="set-row">
+            <span class="set-label">Screen shake</span>
+            <button id="set-shake" class="toggle-btn">ON</button>
+          </div>
+        </div>
+        <button id="settings-back" class="btn">BACK</button>
       </div>
     </div>
 

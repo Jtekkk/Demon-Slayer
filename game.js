@@ -135,21 +135,22 @@
 
   // --- 3. Audio ------------------------------------------------------------
   const Sound = {
-    ctx: null, on: true,
+    ctx: null, on: true, master: 1,
     init() {
       if (this.ctx) return;
       try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
       catch (_) { this.on = false; }
     },
     blip(freq, dur, type = "square", vol = 0.12, slideTo = null) {
-      if (!this.on || !this.ctx) return;
+      const v = vol * this.master;
+      if (!this.on || !this.ctx || v < 0.001) return;   // SFX off / silenced
       const t = this.ctx.currentTime;
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = type;
       osc.frequency.setValueAtTime(freq, t);
       if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-      gain.gain.setValueAtTime(vol, t);
+      gain.gain.setValueAtTime(v, t);
       gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       osc.connect(gain).connect(this.ctx.destination);
       osc.start(t); osc.stop(t + dur);
@@ -248,6 +249,28 @@
       } else {
         this._play();
       }
+    },
+  };
+
+  // --- 3c. Settings — music/SFX volume + screen-shake, persisted ------------
+  const SET_KEY = "demonslayer.settings";
+  const Settings = {
+    musicVol: 0.45, sfxVol: 1.0, shake: true,
+    load() {
+      try {
+        const s = JSON.parse(localStorage.getItem(SET_KEY) || "{}");
+        if (typeof s.musicVol === "number") this.musicVol = clamp(s.musicVol, 0, 1);
+        if (typeof s.sfxVol === "number") this.sfxVol = clamp(s.sfxVol, 0, 1);
+        if (typeof s.shake === "boolean") this.shake = s.shake;
+      } catch (_) {}
+    },
+    save() {
+      try { localStorage.setItem(SET_KEY, JSON.stringify({ musicVol: this.musicVol, sfxVol: this.sfxVol, shake: this.shake })); } catch (_) {}
+    },
+    apply() {
+      Music.vol = this.musicVol;
+      if (Music.el) Music.el.volume = this.musicVol; // mute is handled by pausing
+      Sound.master = this.sfxVol;
     },
   };
 
@@ -1321,6 +1344,11 @@
       else if (this.state === "paused") { this.state = "playing"; pauseScreen.classList.add("hidden"); }
     },
 
+    // Settings modal sits on top of the title/pause screen it was opened from;
+    // closing it just reveals that screen again (game.state is untouched).
+    openSettings() { syncSettingsUI(); settingsScreen.classList.remove("hidden"); },
+    closeSettings() { settingsScreen.classList.add("hidden"); },
+
     // tapping a screen on touch devices acts like the screen button
     touchTap() {
       if (this.state === "menu" || this.state === "gameover" || this.state === "victory") this.start();
@@ -1336,7 +1364,7 @@
       gameoverScreen.classList.remove("hidden");
     },
 
-    shake(mag) { this.shakeMag = Math.max(this.shakeMag, mag); this.shakeT = 0.25; },
+    shake(mag) { if (!Settings.shake) return; this.shakeMag = Math.max(this.shakeMag, mag); this.shakeT = 0.25; },
     spawnPickup(x, y) { this.pickups.push({ x: clamp(x, 10, W - 10), y: clamp(y, H * 0.36, H - 10), r: 7, bob: rand(0, TAU), age: 0, life: 8 }); },
     spawnPlayerShot(angle, dmg) {
       this.playerShots.push({
@@ -1658,6 +1686,15 @@
   const resumeBtn = document.getElementById("resume-btn");
   const quitBtn = document.getElementById("quit-btn");
   const diffBox = document.getElementById("difficulty");
+  const settingsScreen = document.getElementById("settings");
+  const settingsBtn = document.getElementById("settings-btn");
+  const pauseSettingsBtn = document.getElementById("pause-settings-btn");
+  const settingsBack = document.getElementById("settings-back");
+  const setMusic = document.getElementById("set-music");
+  const setSfx = document.getElementById("set-sfx");
+  const setMusicVal = document.getElementById("set-music-val");
+  const setSfxVal = document.getElementById("set-sfx-val");
+  const setShake = document.getElementById("set-shake");
   const bestLine = document.getElementById("best-line");
   const bestVal = document.getElementById("best-val");
   const newbestEl = document.getElementById("newbest");
@@ -1668,7 +1705,39 @@
     pauseScreen.classList.add("hidden");
     upgradeScreen.classList.add("hidden");
     victoryScreen.classList.add("hidden");
+    settingsScreen.classList.add("hidden");
   }
+
+  // ---- Settings UI ----
+  function fillSlider(el, pct) {
+    el.style.background = `linear-gradient(90deg, var(--ember) ${pct}%, #3a2230 ${pct}%)`;
+  }
+  function syncSettingsUI() {
+    const mv = Math.round(Settings.musicVol * 100);
+    const sv = Math.round(Settings.sfxVol * 100);
+    setMusic.value = mv; setMusicVal.textContent = mv; fillSlider(setMusic, mv);
+    setSfx.value = sv; setSfxVal.textContent = sv; fillSlider(setSfx, sv);
+    setShake.textContent = Settings.shake ? "ON" : "OFF";
+    setShake.classList.toggle("off", !Settings.shake);
+  }
+  setMusic.addEventListener("input", () => {
+    const v = +setMusic.value; setMusicVal.textContent = v; fillSlider(setMusic, v);
+    Settings.musicVol = v / 100; Settings.apply(); Settings.save();
+  });
+  setSfx.addEventListener("input", () => {
+    const v = +setSfx.value; setSfxVal.textContent = v; fillSlider(setSfx, v);
+    Settings.sfxVol = v / 100; Settings.apply(); Settings.save();
+    Sound.init(); Sound.hit(); // audible preview of the new SFX level
+  });
+  setShake.addEventListener("click", () => {
+    Settings.shake = !Settings.shake; Settings.save();
+    setShake.textContent = Settings.shake ? "ON" : "OFF";
+    setShake.classList.toggle("off", !Settings.shake);
+    if (Settings.shake) game.shake(6); // little preview nudge
+  });
+  settingsBtn.addEventListener("click", () => game.openSettings());
+  pauseSettingsBtn.addEventListener("click", () => game.openSettings());
+  settingsBack.addEventListener("click", () => game.closeSettings());
   startBtn.addEventListener("click", () => game.start());
   retryBtn.addEventListener("click", () => game.start());
   victoryBtn.addEventListener("click", () => game.start());
@@ -1722,11 +1791,13 @@
 
   game.loadBest();
   Music.init();
+  Settings.load();
+  Settings.apply();
   if (game.best > 0) { bestVal.textContent = game.best; bestLine.classList.remove("hidden"); }
   Background.init();
   requestAnimationFrame(frame);
 
   // Optional debug hook for automated testing only — inert during normal play.
   // Enable by loading the page with the URL fragment "#debug".
-  if (location.hash === "#debug") window.__ds = { game, makeBoss, Enemy, Music };
+  if (location.hash === "#debug") window.__ds = { game, makeBoss, Enemy, Music, Settings, Sound };
 })();
