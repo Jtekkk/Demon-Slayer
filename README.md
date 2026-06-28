@@ -40,10 +40,20 @@ soundtrack (see below).
 ## Goal
 
 Survive the **15-wave campaign**. Each wave throws more — and tougher — demons
-at you, with bosses at waves 5, 10, and 15. Chain kills for a combo, dash
-through danger, and grab the green health motes demons occasionally drop. Score
-is tallied per kill; the run ends when your health hits zero. Clear wave 15 and
-you win. Your best score is saved locally and shown on the title and HUD.
+at you, with bosses at waves 5, 10, and 15. Chain kills for a **combo**: each
+hit without taking damage raises a score multiplier up to **×3**, so aggressive,
+clean play scores far higher. Dash through danger and grab the green health
+motes demons occasionally drop. The run ends when your health hits zero. Clear
+wave 15 and you win. Your best score is saved locally and shown on the title
+and HUD.
+
+### Endless mode
+
+Beat the campaign and the victory screen offers **DESCEND DEEPER** — continue
+the *same run*, keeping your build and score, into endless scaling waves. Enemy
+health and damage ramp with depth, and the three bosses recur every five waves
+(cycling, ever tougher). See how deep you can go before you fall. Or take
+**SLAY AGAIN** for a fresh run.
 
 ### Difficulty
 
@@ -100,9 +110,10 @@ runtime — so the engine itself is entirely original and self-contained.
 
 The background **soundtrack** in `music/` is original music by *tekk* (tracks:
 *Chiptune Hell*, *Cumbia de la Muerte*, *Cumbia Glitch*, *Retro Racer*,
-*Satan's Bride*), shuffled into a looping playlist. It is optional: if the
-`music/` files are absent the game runs fine in silence. Toggle it with `M` or
-the speaker button.
+*Satan's Bride*), shuffled into a looping playlist. **Boss waves** switch to the
+more intense themes and return to the playlist once the wave is cleared. It is
+optional: if the `music/` files are absent the game runs fine in silence. Toggle
+it with `M` or the speaker button.
 
 ## Files
 

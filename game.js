@@ -181,19 +181,21 @@
     { src: "music/10.mp3", title: "Satan's Bride" },
     { src: "music/11.mp3", title: "Satan's Bride" },
   ];
+  // the more intense themes, reserved for boss waves
+  const BOSS_TRACKS = [0, 1, 9, 10]; // Chiptune Hell x2, Satan's Bride x2
   const MUSIC_KEY = "demonslayer.muted";
   const Music = {
-    el: null, order: [], idx: 0, started: false, muted: false, vol: 0.45, fails: 0,
+    el: null, order: [], idx: 0, started: false, muted: false, vol: 0.45, fails: 0, bossMode: false,
     init() {
       if (this.el) return;
       try { this.muted = localStorage.getItem(MUSIC_KEY) === "1"; } catch (_) {}
       const a = new Audio();
       a.volume = this.vol;
       a.preload = "auto";
-      a.addEventListener("ended", () => this.next());
+      a.addEventListener("ended", () => { if (this.bossMode) this._playBoss(); else this.next(); });
       a.addEventListener("error", () => {            // skip a missing/broken file
         this.fails++;
-        if (this.fails <= MUSIC_TRACKS.length) this.next();
+        if (this.fails <= MUSIC_TRACKS.length) { if (this.bossMode) this._playBoss(); else this.next(); }
       });
       a.addEventListener("playing", () => { this.fails = 0; });
       this.el = a;
@@ -217,6 +219,21 @@
       if (!this.started || !this.order.length) return;
       this.idx = (this.idx + 1) % this.order.length;
       if (!this.muted) this._play();
+    },
+    _playBoss() {
+      const t = MUSIC_TRACKS[BOSS_TRACKS[(Math.random() * BOSS_TRACKS.length) | 0]];
+      this.el.src = t.src;
+      const p = this.el.play(); if (p && p.catch) p.catch(() => {});
+      game.nowPlaying = t.title; game.nowPlayingT = 4.5;
+    },
+    enterBoss() {
+      this.bossMode = true;
+      if (this.started && !this.muted) this._playBoss();
+    },
+    exitBoss() {
+      if (!this.bossMode) return;
+      this.bossMode = false;
+      if (this.started && !this.muted) this.next(); // back to the shuffled playlist
     },
     toggleMute() {
       this.init();
@@ -438,6 +455,8 @@
     }
 
     addCombo() { this.combo++; this.comboTimer = 2.2; }
+    // score multiplier from the current combo, capped at x3 (at 20 hits)
+    comboMult() { return 1 + Math.min(this.combo, 20) * 0.1; }
 
     update(dt) {
       this.atkCd = Math.max(0, this.atkCd - dt);
@@ -552,9 +571,9 @@
       const t = ENEMY_TYPES[type];
       this.type = type; this.def = t;
       this.x = x; this.y = y; this.r = t.r;
-      const D = game.diff;
-      this.maxHp = Math.round(t.hp * D.hpMul); this.hp = this.maxHp;
-      this.speed = t.speed; this.dmg = Math.round(t.dmg * D.dmgMul);
+      const D = game.diff, bm = game.bonusMul;
+      this.maxHp = Math.round(t.hp * D.hpMul * bm); this.hp = this.maxHp;
+      this.speed = t.speed; this.dmg = Math.round(t.dmg * D.dmgMul * (1 + (bm - 1) * 0.5));
       this.dead = false; this.hitFlash = 0;
       this.kbx = 0; this.kby = 0; this.atkCd = 0; this.shootCd = rand(1, 2.5);
       this.phase = rand(0, TAU); this.bob = rand(0, TAU);
@@ -578,7 +597,9 @@
 
     die() {
       this.dead = true;
-      game.score += this.def.score; game.kills++;
+      // combo multiplies score — chaining kills without taking a hit pays off
+      const mult = game.player ? game.player.comboMult() : 1;
+      game.score += Math.round(this.def.score * mult); game.kills++;
       Sound.death();
       const col = this.type === "skeleton" ? "#e9e4d4" : this.def.color;
       const n = this.isBoss ? 60 : 22;
@@ -610,8 +631,9 @@
         p.hp = clamp(p.hp + p.lifesteal, 0, p.maxHp);
         floatText(this.x, this.y - this.r - 6, "+" + p.lifesteal, "#6dff8a");
       }
-      // slaying the final boss wins the campaign
-      if (this.bossKind === "tyrant") game.win();
+      // slaying the wave-15 Tyrant wins the campaign (but not recurring
+      // Tyrants that show up in endless mode)
+      if (this.bossKind === "tyrant" && !game.endless) game.win();
     }
 
     shootAt(px, py, speed, dmg, color) {
@@ -1122,10 +1144,10 @@
     b.isBoss = true;
     b.bossKind = kind;
     b.r = def.r;
-    b.maxHp = Math.round(def.hp * game.diff.hpMul);
+    b.maxHp = Math.round(def.hp * game.diff.hpMul * game.bonusMul);
     b.hp = b.maxHp;
     b.speed = def.speed;
-    b.dmg = Math.round(def.dmg * game.diff.dmgMul);
+    b.dmg = Math.round(def.dmg * game.diff.dmgMul * (1 + (game.bonusMul - 1) * 0.5));
     b.bossName = def.title;
     b.bossColor = def.color;
     b.def = { ...ENEMY_TYPES.brute, score: def.score, name: kind, heavy: true };
@@ -1265,6 +1287,7 @@
     diff: DIFFICULTIES.normal, diffKey: "normal",
     upgrades: [], pendingOffer: null,
     nowPlaying: "", nowPlayingT: 0,
+    endless: false, bonusMul: 1,
 
     loadBest() {
       try { this.best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; }
@@ -1285,6 +1308,7 @@
       this.spawnList = []; this.spawnTimer = 0; this.betweenTimer = 1.2;
       this.shakeT = 0; this.newBest = false;
       this.upgrades = []; this.pendingOffer = null;
+      this.endless = false; this.bonusMul = 1;
       Background.init();
     },
 
@@ -1324,6 +1348,7 @@
     },
 
     offerUpgrade() {
+      Music.exitBoss(); // a cleared wave (incl. a boss wave) returns to the playlist
       // pick three distinct boons at random
       const pool = UPGRADES.slice();
       const choices = [];
@@ -1356,34 +1381,63 @@
       this.state = "victory";
       this.score += 500; // clear bonus
       if (this.score > this.best) { this.best = this.score; this.newBest = true; this.saveBest(); }
+      Music.exitBoss();
       victoryNewbest.classList.toggle("hidden", !this.newBest);
       victoryStats.textContent =
         `${this.kills} demons slain · ${this.score} points · ${this.diff.name} difficulty`;
       victoryScreen.classList.remove("hidden");
     },
 
+    // Continue the same run (keeping build & score) into scaling endless waves.
+    descend() {
+      this.endless = true;
+      victoryScreen.classList.add("hidden");
+      // sweep away any finale leftovers, then resume play
+      this.enemies = []; this.enemyShots = []; this.playerShots = []; this.spawnList = [];
+      this.state = "playing";
+      this.offerUpgrade(); // boon for clearing wave 15, then on to wave 16
+    },
+
     startNextWave() {
       this.wave++;
+      // past the authored campaign, scale enemy/boss stats with depth
+      this.bonusMul = this.wave > FINAL_WAVE ? 1 + (this.wave - FINAL_WAVE) * 0.08 : 1;
       Sound.wave();
-      const def = WAVES[this.wave - 1];
+      const def = WAVES[this.wave - 1] || this._endlessWave(this.wave);
+
       // build & shuffle this wave's spawn list from the composition table
       const list = [];
-      const comp = (def && def.spawn) || {};
+      const comp = def.spawn || {};
       for (const type in comp) for (let i = 0; i < comp[type]; i++) list.push(type);
-      // fallback for any wave past the authored campaign (endless safety)
-      if (!def) { for (let i = 0; i < 6 + this.wave; i++) list.push(["skeleton", "imp", "hound", "brute", "wraith"][randInt(0, 4)]); }
       this.spawnList = shuffle(list);
 
-      if (def && def.boss) {
+      if (def.boss) {
         const b = makeBoss(def.boss, this.wave);
         this.enemies.push(b);
         Sound.boss();
+        Music.enterBoss();
         this.spawnTimer = 1.4; // brief delay before adds trickle in
         floatText(W / 2, H * 0.45, b.bossName + " RISES", "#ff4a3c", true);
       } else {
         this.spawnTimer = 0;
-        floatText(W / 2, H * 0.45, `WAVE ${this.wave}`, "#ff8a3a", true);
+        const label = this.wave > FINAL_WAVE ? `DEPTH ${this.wave - FINAL_WAVE}` : `WAVE ${this.wave}`;
+        floatText(W / 2, H * 0.45, label, "#ff8a3a", true);
       }
+    },
+
+    // Procedural waves past wave 15: a boss every 5th wave (cycling the three
+    // bosses), otherwise a growing mixed swarm.
+    _endlessWave(wave) {
+      if (wave % 5 === 0) {
+        const cycle = ["archfiend", "colossus", "tyrant"];
+        const boss = cycle[(wave / 5 - 1) % cycle.length];
+        return { boss, spawn: { hound: 2, imp: 2 } };
+      }
+      const n = Math.min(40, 8 + Math.floor((wave - FINAL_WAVE) * 1.2));
+      const pool = ["skeleton", "imp", "hound", "brute", "wraith", "bloater", "summoner"];
+      const spawn = {};
+      for (let i = 0; i < n; i++) { const t = pool[randInt(0, pool.length - 1)]; spawn[t] = (spawn[t] || 0) + 1; }
+      return { spawn };
     },
 
     spawnOne(type) {
@@ -1413,9 +1467,10 @@
         if (this.betweenTimer <= 0) {
           this.betweenTimer = 1.0;
           // wave 0 = first wave begins with no boon; after that, offer a boon.
-          // The final wave is ended by slaying its boss (game.win), never here.
+          // The campaign's final wave is ended by slaying its boss (game.win),
+          // never here — but endless waves past it keep offering boons.
           if (this.wave === 0) this.startNextWave();
-          else if (this.wave < FINAL_WAVE) this.offerUpgrade();
+          else if (this.wave < FINAL_WAVE || this.endless) this.offerUpgrade();
         }
       }
 
@@ -1536,7 +1591,8 @@
       ctx.fillStyle = "#ffd36a"; ctx.font = "bold 22px 'Trebuchet MS', sans-serif";
       ctx.fillText(`${this.score}`, W - 20, 34);
       ctx.fillStyle = "#cdbfae"; ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
-      ctx.fillText(`WAVE ${this.wave || 1} / ${FINAL_WAVE}`, W - 20, 54);
+      const waveLabel = this.endless ? `ENDLESS · DEPTH ${this.wave - FINAL_WAVE}` : `WAVE ${this.wave || 1} / ${FINAL_WAVE}`;
+      ctx.fillText(waveLabel, W - 20, 54);
       ctx.fillText(`${this.enemies.length + this.spawnList.length} demons`, W - 20, 72);
       ctx.fillStyle = "#8a7f72"; ctx.font = "11px 'Trebuchet MS', sans-serif";
       ctx.fillText(`BEST ${this.best} · ${this.diff.name}`, W - 20, 90);
@@ -1544,7 +1600,7 @@
       if (p.combo >= 2) {
         ctx.textAlign = "center"; ctx.fillStyle = "#ff8a3a";
         ctx.font = "bold 20px 'Trebuchet MS', sans-serif";
-        ctx.fillText(`${p.combo}x COMBO`, W / 2, 36);
+        ctx.fillText(`${p.combo}x COMBO  ·  ${p.comboMult().toFixed(1)}× SCORE`, W / 2, 36);
       }
 
       // boss health bar
@@ -1598,6 +1654,7 @@
   const startBtn = document.getElementById("start-btn");
   const retryBtn = document.getElementById("retry-btn");
   const victoryBtn = document.getElementById("victory-btn");
+  const descendBtn = document.getElementById("descend-btn");
   const resumeBtn = document.getElementById("resume-btn");
   const quitBtn = document.getElementById("quit-btn");
   const diffBox = document.getElementById("difficulty");
@@ -1615,6 +1672,7 @@
   startBtn.addEventListener("click", () => game.start());
   retryBtn.addEventListener("click", () => game.start());
   victoryBtn.addEventListener("click", () => game.start());
+  descendBtn.addEventListener("click", () => game.descend());
   resumeBtn.addEventListener("click", () => game.togglePause());
   quitBtn.addEventListener("click", () => {
     pauseScreen.classList.add("hidden");
