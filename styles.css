@@ -83,6 +83,16 @@ h1.dead {
   text-transform: uppercase;
 }
 
+.best {
+  letter-spacing: 0.25em;
+  font-size: 0.95rem;
+  font-weight: bold;
+  color: var(--ember-bright);
+  margin-top: 0.6rem;
+  text-shadow: 0 0 16px rgba(255, 140, 40, 0.5);
+}
+.best.hidden { display: none; }
+
 .blurb {
   margin: 1.2rem 0;
   line-height: 1.55;
