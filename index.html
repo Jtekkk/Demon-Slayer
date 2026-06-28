@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Demon Slayer — Hellscape</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="game-shell">
+    <canvas id="game" width="960" height="540"></canvas>
+
+    <!-- Start / title screen -->
+    <div id="overlay" class="screen">
+      <div class="panel">
+        <h1>DEMON&nbsp;SLAYER</h1>
+        <p class="subtitle">Hellscape</p>
+        <p class="blurb">
+          The lava fields have torn open. Skeletons claw from the ash, imps
+          swarm the sky, and brutes lumber from the volcano's heart.
+          Cut them all down.
+        </p>
+        <ul class="controls">
+          <li><b>WASD</b> / <b>Arrows</b> — move</li>
+          <li><b>Mouse</b> — aim</li>
+          <li><b>Left Click</b> / <b>Space</b> — slash</li>
+          <li><b>Shift</b> / <b>Right Click</b> — dash</li>
+        </ul>
+        <button id="start-btn" class="btn">ENTER THE HELLSCAPE</button>
+      </div>
+    </div>
+
+    <!-- Game over screen -->
+    <div id="gameover" class="screen hidden">
+      <div class="panel">
+        <h1 class="dead">YOU FELL</h1>
+        <p id="final-stats" class="blurb"></p>
+        <button id="retry-btn" class="btn">RISE AGAIN</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
