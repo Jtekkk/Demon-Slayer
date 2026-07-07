@@ -15,6 +15,7 @@
       <div class="panel">
         <h1>DEMON&nbsp;SLAYER</h1>
         <p class="subtitle">Hellscape</p>
+        <p id="best-line" class="best hidden">BEST&nbsp;—&nbsp;<span id="best-val">0</span></p>
         <p class="blurb">
           The lava fields have torn open. Skeletons claw from the ash, imps
           swarm the sky, and brutes lumber from the volcano's heart.
@@ -22,11 +23,79 @@
         </p>
         <ul class="controls">
           <li><b>WASD</b> / <b>Arrows</b> — move</li>
-          <li><b>Mouse</b> — aim</li>
-          <li><b>Left Click</b> / <b>Space</b> — slash</li>
-          <li><b>Shift</b> / <b>Right Click</b> — dash</li>
+          <li><b>Mouse</b> — aim (gun auto-fires)</li>
+          <li><b>Shift</b> / <b>Space</b> / <b>RMB</b> — dash</li>
+          <li><b>Esc</b> / <b>P</b> — pause</li>
+          <li><b>M</b> — mute music</li>
+          <li>Grab a gun upgrade each wave</li>
         </ul>
+        <p class="field-label">DIFFICULTY</p>
+        <div id="difficulty" class="difficulty">
+          <button class="diff-btn" data-diff="easy">Cinder</button>
+          <button class="diff-btn selected" data-diff="normal">Ember</button>
+          <button class="diff-btn" data-diff="hard">Inferno</button>
+        </div>
         <button id="start-btn" class="btn">ENTER THE HELLSCAPE</button>
+        <button id="settings-btn" class="btn btn-ghost">⚙ SETTINGS</button>
+      </div>
+    </div>
+
+    <!-- Pause screen -->
+    <div id="pause" class="screen hidden">
+      <div class="panel">
+        <h1>PAUSED</h1>
+        <p class="blurb">Catch your breath. The horde waits.</p>
+        <button id="resume-btn" class="btn">RESUME</button>
+        <button id="pause-settings-btn" class="btn btn-ghost">⚙ SETTINGS</button>
+        <button id="quit-btn" class="btn btn-ghost">ABANDON RUN</button>
+      </div>
+    </div>
+
+    <!-- Settings modal (opens over the title or pause screen) -->
+    <div id="settings" class="screen hidden settings-screen">
+      <div class="panel">
+        <h1>SETTINGS</h1>
+        <div class="settings-rows">
+          <div class="set-row">
+            <span class="set-label">Music volume</span>
+            <input id="set-music" class="slider" type="range" min="0" max="100" value="45" />
+            <span id="set-music-val" class="set-val">45</span>
+          </div>
+          <div class="set-row">
+            <span class="set-label">SFX volume</span>
+            <input id="set-sfx" class="slider" type="range" min="0" max="100" value="100" />
+            <span id="set-sfx-val" class="set-val">100</span>
+          </div>
+          <div class="set-row">
+            <span class="set-label">Screen shake</span>
+            <button id="set-shake" class="toggle-btn">ON</button>
+          </div>
+        </div>
+        <button id="settings-back" class="btn">BACK</button>
+      </div>
+    </div>
+
+    <!-- Upgrade / level-up screen -->
+    <div id="upgrade" class="screen hidden">
+      <div class="panel panel-wide">
+        <h1 class="upgrade-title">CLAIM POWER</h1>
+        <p id="upgrade-sub" class="subtitle">Wave cleared — choose a boon</p>
+        <div id="upgrade-cards" class="cards"></div>
+      </div>
+    </div>
+
+    <!-- Victory screen -->
+    <div id="victory" class="screen hidden">
+      <div class="panel">
+        <h1 class="won">HELLSCAPE CLEARED</h1>
+        <p id="victory-newbest" class="best hidden">★ NEW BEST ★</p>
+        <p class="blurb">
+          The Hellgate Tyrant falls. The lava fields fall silent — for now.
+          You stand alone amid the ash, blade still burning.
+        </p>
+        <p id="victory-stats" class="blurb"></p>
+        <button id="descend-btn" class="btn">DESCEND DEEPER</button>
+        <button id="victory-btn" class="btn btn-ghost">SLAY AGAIN (NEW RUN)</button>
       </div>
     </div>
 
@@ -34,6 +103,7 @@
     <div id="gameover" class="screen hidden">
       <div class="panel">
         <h1 class="dead">YOU FELL</h1>
+        <p id="newbest" class="best hidden">★ NEW BEST ★</p>
         <p id="final-stats" class="blurb"></p>
         <button id="retry-btn" class="btn">RISE AGAIN</button>
       </div>
